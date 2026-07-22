@@ -1,0 +1,291 @@
+<style>
+  .full-mockup {
+    position: relative;
+    width: 600px;
+    height: 500px;
+    margin: 20px auto;
+    background: #11100e;
+    border: 1px solid rgba(213, 208, 184, 0.18);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .analyzer-bg {
+    position: absolute;
+    inset: 30px 40px 50px 50px;
+    background: linear-gradient(to bottom, rgba(213,208,184,0.03) 0%, rgba(213,208,184,0.01) 100%);
+    border: 1px solid rgba(213,208,184,0.10);
+    border-radius: 2px;
+  }
+  .analyzer-grid {
+    position: absolute;
+    inset: 30px 40px 50px 50px;
+  }
+  /* simulated FFT bins */
+  .fft-bars {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 0 4px;
+  }
+  .fft-bar {
+    flex: 1;
+    background: linear-gradient(to top, rgba(239,139,72,0.12), rgba(239,139,72,0.04));
+    border-radius: 1px 1px 0 0;
+  }
+  /* tic-tac-toe grid lines */
+  .grid-lines {
+    position: absolute;
+    inset: 30px 40px 50px 50px;
+    pointer-events: auto;
+  }
+  .vline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(213,208,184,0.5);
+    cursor: ew-resize;
+    z-index: 2;
+  }
+  .vline::after {
+    content: '';
+    position: absolute;
+    left: -6px;
+    right: -6px;
+    top: 0;
+    bottom: 0;
+  }
+  .vline .handle-circle {
+    position: absolute;
+    bottom: -8px;
+    left: -5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(239,139,72,0.8);
+    border: 1px solid rgba(213,208,184,0.4);
+  }
+  .hline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: rgba(213,208,184,0.5);
+    cursor: ns-resize;
+    z-index: 2;
+  }
+  .hline::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    bottom: -6px;
+    left: 0;
+    right: 0;
+  }
+  .hline .handle-circle {
+    position: absolute;
+    right: -8px;
+    top: -5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(239,139,72,0.8);
+    border: 1px solid rgba(213,208,184,0.4);
+  }
+  .intersection {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin-left: -8px;
+    margin-top: -8px;
+    border-radius: 50%;
+    background: rgba(239,139,72,0.7);
+    border: 2px solid rgba(213,208,184,0.5);
+    cursor: move;
+    z-index: 3;
+  }
+  .intersection::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: -6px;
+    right: -6px;
+    bottom: -6px;
+  }
+  /* cell labels */
+  .cell-label {
+    position: absolute;
+    color: rgba(213,208,184,0.25);
+    font: 9px monospace;
+    pointer-events: none;
+  }
+  /* wave shapes in cells */
+  .cell-shape {
+    position: absolute;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .cell-shape svg {
+    width: 100%;
+    height: 100%;
+  }
+  /* axis labels */
+  .axis-label {
+    position: absolute;
+    color: rgba(213,208,184,0.35);
+    font: 10px monospace;
+    pointer-events: none;
+  }
+  .x-label { text-align: center; }
+  .y-label { text-align: right; }
+  /* floating instruction */
+  .instr {
+    text-align: center;
+    color: rgba(213,208,184,0.5);
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .mock-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid rgba(213,208,184,0.10);
+  }
+  .mock-header h3 {
+    color: rgba(213,208,184,0.8);
+    font-size: 13px;
+    margin: 0;
+  }
+  .mock-header .badge {
+    color: rgba(213,208,184,0.4);
+    font-size: 10px;
+    background: rgba(213,208,184,0.06);
+    padding: 2px 8px;
+    border-radius: 3px;
+  }
+</style>
+
+<div class="full-mockup">
+  <div class="mock-header">
+    <h3>◈ GRAVEL / SPECTRAL GRID</h3>
+    <span class="badge">3×3 · drag to reshape</span>
+  </div>
+
+  <!-- Analyzer background -->
+  <div class="analyzer-bg"></div>
+
+  <!-- FFT bars (static placeholder) -->
+  <div class="analyzer-grid">
+    <div class="fft-bars">
+      <div class="fft-bar" style="height: 12%"></div>
+      <div class="fft-bar" style="height: 18%"></div>
+      <div class="fft-bar" style="height: 8%"></div>
+      <div class="fft-bar" style="height: 25%"></div>
+      <div class="fft-bar" style="height: 45%"></div>
+      <div class="fft-bar" style="height: 60%"></div>
+      <div class="fft-bar" style="height: 52%"></div>
+      <div class="fft-bar" style="height: 38%"></div>
+      <div class="fft-bar" style="height: 70%"></div>
+      <div class="fft-bar" style="height: 82%"></div>
+      <div class="fft-bar" style="height: 65%"></div>
+      <div class="fft-bar" style="height: 48%"></div>
+      <div class="fft-bar" style="height: 55%"></div>
+      <div class="fft-bar" style="height: 40%"></div>
+      <div class="fft-bar" style="height: 30%"></div>
+      <div class="fft-bar" style="height: 22%"></div>
+      <div class="fft-bar" style="height: 15%"></div>
+      <div class="fft-bar" style="height: 10%"></div>
+      <div class="fft-bar" style="height: 8%"></div>
+      <div class="fft-bar" style="height: 5%"></div>
+    </div>
+
+    <!-- Tic-tac-toe grid lines -->
+    <div class="grid-lines">
+      <!-- Vertical lines (crossover frequencies) -->
+      <div class="vline" style="left: 33%">
+        <div class="handle-circle"></div>
+      </div>
+      <div class="vline" style="left: 66%">
+        <div class="handle-circle"></div>
+      </div>
+
+      <!-- Horizontal lines (amplitude thresholds) -->
+      <div class="hline" style="top: 50%">
+        <div class="handle-circle"></div>
+      </div>
+      <div class="hline" style="top: 75%">
+        <div class="handle-circle"></div>
+      </div>
+
+      <!-- Intersection handles -->
+      <div class="intersection" style="left: 33%; top: 50%"></div>
+      <div class="intersection" style="left: 66%; top: 50%"></div>
+      <div class="intersection" style="left: 33%; top: 75%"></div>
+      <div class="intersection" style="left: 66%; top: 75%"></div>
+
+      <!-- Wavetable shapes in cells -->
+      <!-- Top-left: low freq, quiet layer -->
+      <div class="cell-shape" style="left: 2%; top: 2%; width: 29%; height: 46%;">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+          <path d="M0,20 Q10,30 20,20 Q30,10 40,20 Q50,30 60,20 Q70,10 80,20 Q90,30 100,20" fill="none" stroke="rgba(239,139,72,0.6)" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <!-- Top-center: mid freq, quiet layer -->
+      <div class="cell-shape" style="left: 34%; top: 2%; width: 30%; height: 46%;">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+          <path d="M0,30 Q15,10 30,20 Q45,30 55,15 Q65,5 80,25 Q90,35 100,20" fill="none" stroke="rgba(239,139,72,0.6)" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <!-- Top-right: high freq, quiet layer -->
+      <div class="cell-shape" style="left: 67%; top: 2%; width: 31%; height: 46%;">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+          <path d="M0,20 L20,5 L40,35 L60,10 L80,30 L100,15" fill="none" stroke="rgba(239,139,72,0.6)" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <!-- Middle-left: low freq, moderate layer -->
+      <div class="cell-shape" style="left: 2%; top: 26%; width: 29%; height: 46%;">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+          <path d="M0,20 Q20,35 40,10 Q60,30 80,15 Q90,25 100,20" fill="none" stroke="rgba(239,139,72,0.7)" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Axis labels -->
+    <div class="axis-label x-label" style="bottom: -22px; left: 10%; width: 20%;">LOW</div>
+    <div class="axis-label x-label" style="bottom: -22px; left: 40%; width: 20%;">MID</div>
+    <div class="axis-label x-label" style="bottom: -22px; left: 70%; width: 20%;">HIGH</div>
+
+    <div class="axis-label y-label" style="right: -28px; top: 0%;">LOUD</div>
+    <div class="axis-label y-label" style="right: -28px; top: 46%;">MID</div>
+    <div class="axis-label y-label" style="right: -28px; top: 72%;">QUIET</div>
+  </div>
+</div>
+
+<div class="instr">
+  ← Drag vertical lines for crossover freqs · Drag horizontal lines for amplitude thresholds · Drag intersections for both
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>What this shows</h3>
+  <p>The 3×3 spectral grid overlays the real-time spectrum analyzer.</p>
+  <ul>
+    <li><strong>X axis</strong> — Crossover frequencies (2 vertical lines, divide low/mid/high bands)</li>
+    <li><strong>Y axis</strong> — Amplitude thresholds (2 horizontal lines, divide quiet/moderate/loud spectral content)</li>
+    <li><strong>9 cells</strong> — Each shows the active wavetable shape for that (freq band × gain layer) combination</li>
+    <li><strong>Analyzer</strong> — Live FFT shows what's happening in each region</li>
+  </ul>
+</div>
+
+<div class="section" style="margin-top: 16px;">
+  <h3>Interaction model</h3>
+  <ul>
+    <li>Drag a <strong>vertical line</strong> — moves the crossover point. Push prevents bands from overlapping</li>
+    <li>Drag a <strong>horizontal line</strong> — moves the amplitude threshold</li>
+    <li>Drag an <strong>intersection</strong> — moves both lines simultaneously</li>
+    <li><strong>Click a cell</strong> — selects that wavetable for editing (opens shape editor or morph control)</li>
+  </ul>
+</div>

@@ -1,0 +1,6 @@
+Task 1: complete (commit 1137b85)
+Task 2: complete (commit f456d2c)
+Task 3: complete (commit 6fce495)
+Task 4: complete (commit 0a70e00)
+Task 5: complete (commit d30a6de)
+Task 6: complete (build + tests pass)
