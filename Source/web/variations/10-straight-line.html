@@ -258,7 +258,7 @@ class RuneFader {
         ctx.beginPath(); ctx.ellipse(rx,my,2.8,2.8,0,0,Math.PI*2); ctx.fill();
     }
 
-    // ── Outlined arrows from rect top corners ──
+    // ── Outlined arrows from rect edges (inset to contain stroke) ──
     _drawOutlineArrowsH(ctx,rect,ry,spread){
         const arrows=[
             {v:this.modSmoothed, col:CORAL, mod:'meta'},
@@ -268,16 +268,19 @@ class RuneFader {
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
+            const half=lw/2, inset=rect.w-lw;
             ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter';
             if(a.v>0){
-                const tipX=rect.x+a.v*rect.w;
+                const baseX=rect.x+half;
+                const tipX=baseX+a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(rect.x, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(rect.x, ry+spread);
+                ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+spread);
                 ctx.closePath(); ctx.stroke();
             }else{
-                const tipX=rect.x+rect.w+a.v*rect.w;
+                const baseX=rect.x+rect.w-half;
+                const tipX=baseX+a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(rect.x+rect.w, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(rect.x+rect.w, ry+spread);
+                ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+spread);
                 ctx.closePath(); ctx.stroke();
             }
         }
@@ -291,16 +294,19 @@ class RuneFader {
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
+            const half=lw/2, inset=rect.h-lw;
             ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter';
             if(a.v<0){
-                const tipY=rect.y+Math.abs(a.v)*rect.h;
+                const baseY=rect.y+half;
+                const tipY=baseY+Math.abs(a.v)*inset;
                 ctx.beginPath();
-                ctx.moveTo(rx-spread, rect.y); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, rect.y);
+                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, baseY);
                 ctx.closePath(); ctx.stroke();
             }else{
-                const tipY=rect.y+rect.h-a.v*rect.h;
+                const baseY=rect.y+rect.h-half;
+                const tipY=baseY-a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(rx-spread, rect.y+rect.h); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, rect.y+rect.h);
+                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, baseY);
                 ctx.closePath(); ctx.stroke();
             }
         }
@@ -315,10 +321,11 @@ class RuneFader {
         ];
         for(const c of checks){
             if(this._mods[c.mod] && Math.abs(c.v)<0.001){
-                ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=1.8;
+                ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=3.6;
+                const bx=rect.x+1.8, ex=rect.x+rect.w-1.8;
                 ctx.beginPath();
-                ctx.moveTo(rect.x, ry-spread); ctx.lineTo(rect.x, ry+spread);
-                ctx.moveTo(rect.x+rect.w, ry-spread); ctx.lineTo(rect.x+rect.w, ry+spread);
+                ctx.moveTo(bx, ry-spread); ctx.lineTo(bx, ry+spread);
+                ctx.moveTo(ex, ry-spread); ctx.lineTo(ex, ry+spread);
                 ctx.stroke();
             }
         }
@@ -331,10 +338,11 @@ class RuneFader {
         ];
         for(const c of checks){
             if(this._mods[c.mod] && Math.abs(c.v)<0.001){
-                ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=1.8;
+                ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=3.6;
+                const ty=rect.y+1.8, by=rect.y+rect.h-1.8;
                 ctx.beginPath();
-                ctx.moveTo(rx-spread, rect.y); ctx.lineTo(rx+spread, rect.y);
-                ctx.moveTo(rx-spread, rect.y+rect.h); ctx.lineTo(rx+spread, rect.y+rect.h);
+                ctx.moveTo(rx-spread, ty); ctx.lineTo(rx+spread, ty);
+                ctx.moveTo(rx-spread, by); ctx.lineTo(rx+spread, by);
                 ctx.stroke();
             }
         }
