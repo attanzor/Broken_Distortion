@@ -274,12 +274,16 @@ class RuneFader {
                 const baseX=rect.x+half;
                 const tipX=baseX+a.v*inset;
                 ctx.beginPath();
+                ctx.moveTo(baseX, ry-spread); ctx.lineTo(baseX, ry+spread); ctx.stroke();
+                ctx.beginPath();
                 ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.stroke();
                 ctx.beginPath();
                 ctx.moveTo(tipX, ry); ctx.lineTo(baseX, ry+spread); ctx.stroke();
             }else{
                 const baseX=rect.x+rect.w-half;
                 const tipX=baseX+a.v*inset;
+                ctx.beginPath();
+                ctx.moveTo(baseX, ry-spread); ctx.lineTo(baseX, ry+spread); ctx.stroke();
                 ctx.beginPath();
                 ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.stroke();
                 ctx.beginPath();
@@ -302,12 +306,16 @@ class RuneFader {
                 const baseY=rect.y+half;
                 const tipY=baseY+Math.abs(a.v)*inset;
                 ctx.beginPath();
+                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx+spread, baseY); ctx.stroke();
+                ctx.beginPath();
                 ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.stroke();
                 ctx.beginPath();
                 ctx.moveTo(rx, tipY); ctx.lineTo(rx+spread, baseY); ctx.stroke();
             }else{
                 const baseY=rect.y+rect.h-half;
                 const tipY=baseY-a.v*inset;
+                ctx.beginPath();
+                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx+spread, baseY); ctx.stroke();
                 ctx.beginPath();
                 ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.stroke();
                 ctx.beginPath();
