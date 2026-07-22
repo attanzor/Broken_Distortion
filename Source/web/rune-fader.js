@@ -58,9 +58,6 @@ class RuneFader
         this._dragOrigin = 0;
 
         canvas.addEventListener ('mousedown',  this._down = this._down.bind (this));
-        canvas.addEventListener ('mousemove',  this._move = this._move.bind (this));
-        canvas.addEventListener ('mouseup',    this._up   = this._up.bind (this));
-        canvas.addEventListener ('mouseleave', this._up);
         canvas.addEventListener ('contextmenu', e => e.preventDefault());
         canvas.addEventListener ('wheel', this._wheel = this._wheel.bind (this), { passive: false });
         canvas.style.cursor = this.h ? 'ew-resize' : 'ns-resize';
@@ -121,6 +118,8 @@ class RuneFader
             this._drag = 'value';
         }
         this._dragStart = this.h ? e.clientX : e.clientY;
+        document.addEventListener ('mousemove', this._move);
+        document.addEventListener ('mouseup',   this._up);
         if (this._drag !== 'value') this._applyDrag (e);
         e.preventDefault();
     }
@@ -157,7 +156,11 @@ class RuneFader
         this._applyDrag (e);
     }
 
-    _up () { this._drag = 'none'; }
+    _up () {
+        this._drag = 'none';
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
 
     _wheel (e)
     {
@@ -349,10 +352,9 @@ class RuneFader
     destroy ()
     {
         this.c.removeEventListener ('mousedown',  this._down);
-        this.c.removeEventListener ('mousemove',  this._move);
-        this.c.removeEventListener ('mouseup',    this._up);
-        this.c.removeEventListener ('mouseleave', this._up);
         this.c.removeEventListener ('wheel',      this._wheel);
         this.c.removeEventListener ('contextmenu', () => {});
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
     }
 }
