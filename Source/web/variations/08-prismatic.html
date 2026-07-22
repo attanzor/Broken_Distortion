@@ -176,28 +176,22 @@ class RuneFader {
 
     // ── Diamond handle: two filled triangles mirroring ──
     _drawDiamondHandle(ctx,hp,ry,rhh,lw){
-        const halfW=lw*2.4; // how wide the diamond is
+        const halfW=lw*2.4;
         const h=rhh*0.9;
-        ctx.save();
-        ctx.shadowColor=rgba(ROSEGOLD,0.5); ctx.shadowBlur=14;
         ctx.fillStyle=this.explEnabled?ROSEGOLD:'#555';
         ctx.beginPath();
-        ctx.moveTo(hp, ry-h);      // top tip
-        ctx.lineTo(hp+halfW, ry);  // right point
-        ctx.lineTo(hp, ry+h);      // bottom tip
-        ctx.lineTo(hp-halfW, ry);  // left point
+        ctx.moveTo(hp, ry-h);
+        ctx.lineTo(hp+halfW, ry);
+        ctx.lineTo(hp, ry+h);
+        ctx.lineTo(hp-halfW, ry);
         ctx.closePath();
         ctx.fill();
-        ctx.restore();
-        // Bright center core
         ctx.fillStyle=rgba('#FFF0E5',0.6);
         ctx.beginPath(); ctx.ellipse(hp,ry,3,3,0,0,Math.PI*2); ctx.fill();
     }
     _drawDiamondHandleV(ctx,rx,hp,rhh,lw){
         const halfH=lw*2.4;
         const w=rhh*0.9;
-        ctx.save();
-        ctx.shadowColor=rgba(ROSEGOLD,0.5); ctx.shadowBlur=14;
         ctx.fillStyle=this.explEnabled?ROSEGOLD:'#555';
         ctx.beginPath();
         ctx.moveTo(rx-w, hp);
@@ -206,7 +200,6 @@ class RuneFader {
         ctx.lineTo(rx, hp+halfH);
         ctx.closePath();
         ctx.fill();
-        ctx.restore();
         ctx.fillStyle=rgba('#FFF0E5',0.6);
         ctx.beginPath(); ctx.ellipse(rx,hp,3,3,0,0,Math.PI*2); ctx.fill();
     }
@@ -225,18 +218,27 @@ class RuneFader {
         }
     }
     _filledHArrow(ctx,rLeft,rRight,y,spread,value,colour){
-        const alpha=0.25+Math.abs(value)*0.40;
         if(value>0){
             const tipX=rLeft+value*(rRight-rLeft);
-            ctx.fillStyle=rgba(colour,alpha);
+            const midX=(rLeft+tipX)/2;
+            ctx.fillStyle=colour;
             ctx.beginPath();
-            ctx.moveTo(rLeft,y-spread); ctx.lineTo(tipX,y); ctx.lineTo(rLeft,y+spread);
+            ctx.moveTo(rLeft, y-spread*0.3);
+            ctx.quadraticCurveTo(rLeft, y-spread, midX, y-spread*0.5);
+            ctx.quadraticCurveTo(tipX-4, y-2, tipX, y);
+            ctx.quadraticCurveTo(tipX-4, y+2, midX, y+spread*0.5);
+            ctx.quadraticCurveTo(rLeft, y+spread, rLeft, y+spread*0.3);
             ctx.closePath(); ctx.fill();
         }else{
             const tipX=rRight+value*(rRight-rLeft);
-            ctx.fillStyle=rgba(colour,alpha);
+            const midX=(rRight+tipX)/2;
+            ctx.fillStyle=colour;
             ctx.beginPath();
-            ctx.moveTo(rRight,y-spread); ctx.lineTo(tipX,y); ctx.lineTo(rRight,y+spread);
+            ctx.moveTo(rRight, y-spread*0.3);
+            ctx.quadraticCurveTo(rRight, y-spread, midX, y-spread*0.5);
+            ctx.quadraticCurveTo(tipX+4, y-2, tipX, y);
+            ctx.quadraticCurveTo(tipX+4, y+2, midX, y+spread*0.5);
+            ctx.quadraticCurveTo(rRight, y+spread, rRight, y+spread*0.3);
             ctx.closePath(); ctx.fill();
         }
     }
@@ -252,18 +254,27 @@ class RuneFader {
         }
     }
     _filledVArrow(ctx,x,rTop,rBot,spread,value,colour){
-        const alpha=0.25+Math.abs(value)*0.40;
         if(value<0){
             const tipY=rTop+Math.abs(value)*(rBot-rTop);
-            ctx.fillStyle=rgba(colour,alpha);
+            const midY=(rTop+tipY)/2;
+            ctx.fillStyle=colour;
             ctx.beginPath();
-            ctx.moveTo(x-spread,rTop); ctx.lineTo(x,tipY); ctx.lineTo(x+spread,rTop);
+            ctx.moveTo(x-spread*0.3, rTop);
+            ctx.quadraticCurveTo(x-spread, rTop, x-spread*0.5, midY);
+            ctx.quadraticCurveTo(x-2, tipY-4, x, tipY);
+            ctx.quadraticCurveTo(x+2, tipY-4, x+spread*0.5, midY);
+            ctx.quadraticCurveTo(x+spread, rTop, x+spread*0.3, rTop);
             ctx.closePath(); ctx.fill();
         }else{
             const tipY=rBot-value*(rBot-rTop);
-            ctx.fillStyle=rgba(colour,alpha);
+            const midY=(rBot+tipY)/2;
+            ctx.fillStyle=colour;
             ctx.beginPath();
-            ctx.moveTo(x-spread,rBot); ctx.lineTo(x,tipY); ctx.lineTo(x+spread,rBot);
+            ctx.moveTo(x-spread*0.3, rBot);
+            ctx.quadraticCurveTo(x-spread, rBot, x-spread*0.5, midY);
+            ctx.quadraticCurveTo(x-2, tipY+4, x, tipY);
+            ctx.quadraticCurveTo(x+2, tipY+4, x+spread*0.5, midY);
+            ctx.quadraticCurveTo(x+spread, rBot, x+spread*0.3, rBot);
             ctx.closePath(); ctx.fill();
         }
     }
