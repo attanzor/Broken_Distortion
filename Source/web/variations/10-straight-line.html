@@ -146,9 +146,9 @@ class RuneFader {
             this._drawOutlineArrowsH(ctx,rect,r.y,spread);
             // Modulation feedback — white line behind handle
             this._drawModLine(ctx,hp,r.y,rhh,r.left,r.right,lw);
-            // Handle — perpendicular line, wider than original
+            // Handle — same height as box
             const hndC=this.explEnabled?ROSEGOLD:'#555';
-            const hh2=rhh*1.6;
+            const hh2=spread+pad;
             ctx.strokeStyle=hndC; ctx.lineWidth=lw;
             ctx.beginPath(); ctx.moveTo(hp, r.y-hh2); ctx.lineTo(hp, r.y+hh2); ctx.stroke();
             ctx.fillStyle=hndC;
@@ -163,9 +163,9 @@ class RuneFader {
             this._drawOutlineArrowsV(ctx,rect,r.x,spread);
             // Modulation feedback — white line behind handle
             this._drawModLineV(ctx,r.x,hp,rhh,r.top,r.bot,lw);
-            // Handle — perpendicular line, wider than original
+            // Handle — same height as box
             const hndCv=this.explEnabled?ROSEGOLD:'#555';
-            const w2=rhh*1.6;
+            const w2=spread+pad;
             ctx.strokeStyle=hndCv; ctx.lineWidth=lw;
             ctx.beginPath(); ctx.moveTo(r.x-w2, hp); ctx.lineTo(r.x+w2, hp); ctx.stroke();
             ctx.fillStyle=hndCv;
