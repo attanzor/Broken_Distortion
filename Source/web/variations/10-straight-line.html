@@ -32,8 +32,9 @@
 <div class="instructions">
   Drag = value &ensp; Shift+drag = slope (seafoam) &ensp; Alt+drag = jitter (violet) &ensp;
   Cmd+drag = modulation (coral) &ensp; Ctrl+click = popup &ensp;
-  White line = mod feedback (moves with handle) &ensp;
-  Double-click + mod = reset that arrow
+  Ghost handle = mod feedback &ensp;
+  Double-click + mod = reset &ensp;
+  Mod+hold at zero = edge lines
 </div>
 
 <script>
@@ -119,7 +120,13 @@ class RuneFader {
         }else{ this.value=this._valFromClient(e.clientX,e.clientY); this._onValue(this.value); }
     }
     _move(e){ if(this._drag!=='none') this._applyDrag(e); }
-    _up(){ this._drag='none'; document.removeEventListener('mousemove',this._move); document.removeEventListener('mouseup',this._up); }
+    _up(){
+        const snap=0.015;
+        if(this._drag==='slope' && Math.abs(this.slpTarget)<snap){ this.slpTarget=0; this._onSlope(0); }
+        if(this._drag==='jitter' && Math.abs(this.jitTarget)<snap){ this.jitTarget=0; this._onJitter(0); }
+        if(this._drag==='mod' && Math.abs(this.modTarget)<snap){ this.modTarget=0; this._onModulation(0); }
+        this._drag='none'; document.removeEventListener('mousemove',this._move); document.removeEventListener('mouseup',this._up);
+    }
     _wheel(e){ if(e.shiftKey){ e.preventDefault(); this.value=Math.max(0,Math.min(1,this.value+(e.deltaY<0?0.001:-0.001))); this._onValue(this.value); } }
     _tick(){
         const c=0.18;
@@ -155,6 +162,8 @@ class RuneFader {
             this._drawTaperedRail(ctx,r,this.h);
             // Arrows — outlined, base at rect corners
             this._drawOutlineArrowsH(ctx,rect,r.y,spread);
+            // Zero-edge lines
+            this._drawZeroLinesH(ctx,rect,r.y,spread);
             // Modulation feedback — arrow from handle
             this._drawModArrowH(ctx,hp,r.y,spread,r.left,r.right,lw);
             // Handle — white, thick
@@ -171,13 +180,15 @@ class RuneFader {
             ctx.strokeRect(rect.x,rect.y,rect.w,rect.h);
             this._drawTaperedRailV(ctx,r);
             this._drawOutlineArrowsV(ctx,rect,r.x,spread);
+            // Zero-edge lines
+            this._drawZeroLinesV(ctx,rect,r.x,spread);
             // Modulation feedback — arrow from handle
             this._drawModArrowV(ctx,r.x,hp,spread,r.top,r.bot,lw);
             // Handle — white, thick
             const w2=spread+pad;
             ctx.strokeStyle=CREAM; ctx.lineWidth=lw*2;
             ctx.beginPath(); ctx.moveTo(r.x-w2, hp); ctx.lineTo(r.x+w2, hp); ctx.stroke();
-            ctx.fillStyle=hndCv;
+            ctx.fillStyle=CREAM;
             ctx.beginPath(); ctx.ellipse(r.x,hp,2.8,2.8,0,0,Math.PI*2); ctx.fill();
         }
     }
@@ -291,6 +302,40 @@ class RuneFader {
                 ctx.beginPath();
                 ctx.moveTo(rx-spread, rect.y+rect.h); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, rect.y+rect.h);
                 ctx.closePath(); ctx.stroke();
+            }
+        }
+    }
+
+    // ── Zero-edge lines: when mod key held and arrow at zero ──
+    _drawZeroLinesH(ctx,rect,ry,spread){
+        const checks=[
+            {mod:'shift', v:this.slpSmoothed, col:SEAFOAM},
+            {mod:'alt',   v:this.jitSmoothed, col:VIOLET},
+            {mod:'meta',  v:this.modSmoothed, col:CORAL},
+        ];
+        for(const c of checks){
+            if(this._mods[c.mod] && Math.abs(c.v)<0.001){
+                ctx.strokeStyle=rgba(c.col,0.5); ctx.lineWidth=1.2;
+                ctx.beginPath();
+                ctx.moveTo(rect.x, ry-spread); ctx.lineTo(rect.x, ry+spread);
+                ctx.moveTo(rect.x+rect.w, ry-spread); ctx.lineTo(rect.x+rect.w, ry+spread);
+                ctx.stroke();
+            }
+        }
+    }
+    _drawZeroLinesV(ctx,rect,rx,spread){
+        const checks=[
+            {mod:'shift', v:this.slpSmoothed, col:SEAFOAM},
+            {mod:'alt',   v:this.jitSmoothed, col:VIOLET},
+            {mod:'meta',  v:this.modSmoothed, col:CORAL},
+        ];
+        for(const c of checks){
+            if(this._mods[c.mod] && Math.abs(c.v)<0.001){
+                ctx.strokeStyle=rgba(c.col,0.5); ctx.lineWidth=1.2;
+                ctx.beginPath();
+                ctx.moveTo(rx-spread, rect.y); ctx.lineTo(rx+spread, rect.y);
+                ctx.moveTo(rx-spread, rect.y+rect.h); ctx.lineTo(rx+spread, rect.y+rect.h);
+                ctx.stroke();
             }
         }
     }
