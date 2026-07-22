@@ -207,13 +207,21 @@ class RuneFader {
         ctx.beginPath(); ctx.moveTo(r.x,r.top); ctx.lineTo(r.x,r.bot); ctx.stroke();
     }
 
-    // ── Modulation feedback: ghost handle at 50% alpha ──
+    // ── Modulation feedback: ghost handle at 50% alpha + gradient to main ──
     _drawModArrowH(ctx,hp,ry,spread,rLeft,rRight,lw){
         const railW=rRight-rLeft;
         const offset=this.appSmoothed*0.5*railW;
         if(Math.abs(offset)<0.5)return;
         const mx=Math.max(rLeft,Math.min(rRight,hp+offset));
         const half=spread+4;
+        const from=Math.min(hp,mx), to=Math.max(hp,mx);
+        if(to-from>1){
+            const grad=ctx.createLinearGradient(from,0,to,0);
+            const ghostAlpha=0.25;
+            if(mx<hp){ grad.addColorStop(0,rgba(CREAM,ghostAlpha)); grad.addColorStop(1,rgba(CREAM,0)); }
+            else{ grad.addColorStop(0,rgba(CREAM,0)); grad.addColorStop(1,rgba(CREAM,ghostAlpha)); }
+            ctx.fillStyle=grad; ctx.fillRect(from,ry-half,to-from,half*2);
+        }
         ctx.strokeStyle=rgba(CREAM,0.5); ctx.lineWidth=lw*2;
         ctx.beginPath(); ctx.moveTo(mx,ry-half); ctx.lineTo(mx,ry+half); ctx.stroke();
         ctx.fillStyle=rgba(CREAM,0.5);
@@ -225,6 +233,14 @@ class RuneFader {
         if(Math.abs(offset)<0.5)return;
         const my=Math.max(rTop,Math.min(rBot,hp-offset));
         const half=spread+4;
+        const from=Math.min(hp,my), to=Math.max(hp,my);
+        if(to-from>1){
+            const grad=ctx.createLinearGradient(0,from,0,to);
+            const ghostAlpha=0.25;
+            if(my>hp){ grad.addColorStop(0,rgba(CREAM,0)); grad.addColorStop(1,rgba(CREAM,ghostAlpha)); }
+            else{ grad.addColorStop(0,rgba(CREAM,0)); grad.addColorStop(1,rgba(CREAM,ghostAlpha)); }
+            ctx.fillStyle=grad; ctx.fillRect(rx-half,from,half*2,to-from);
+        }
         ctx.strokeStyle=rgba(CREAM,0.5); ctx.lineWidth=lw*2;
         ctx.beginPath(); ctx.moveTo(rx-half,my); ctx.lineTo(rx+half,my); ctx.stroke();
         ctx.fillStyle=rgba(CREAM,0.5);
