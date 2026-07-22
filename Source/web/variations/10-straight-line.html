@@ -269,18 +269,20 @@ class RuneFader {
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
             const half=lw/2, inset=rect.w-lw;
-            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter'; ctx.miterLimit=50;
+            const hScale=Math.min(Math.abs(a.v)*6,1);
+            const s=spread*Math.max(hScale,0.35);
+            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter';
             if(a.v>0){
                 const baseX=rect.x+half;
                 const tipX=baseX+a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+spread);
+                ctx.moveTo(baseX, ry-s); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+s);
                 ctx.closePath(); ctx.stroke();
             }else{
                 const baseX=rect.x+rect.w-half;
                 const tipX=baseX+a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+spread);
+                ctx.moveTo(baseX, ry-s); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+s);
                 ctx.closePath(); ctx.stroke();
             }
         }
@@ -295,18 +297,20 @@ class RuneFader {
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
             const half=lw/2, inset=rect.h-lw;
-            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter'; ctx.miterLimit=50;
+            const hScale=Math.min(Math.abs(a.v)*6,1);
+            const s=spread*Math.max(hScale,0.35);
+            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter';
             if(a.v<0){
                 const baseY=rect.y+half;
                 const tipY=baseY+Math.abs(a.v)*inset;
                 ctx.beginPath();
-                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, baseY);
+                ctx.moveTo(rx-s, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+s, baseY);
                 ctx.closePath(); ctx.stroke();
             }else{
                 const baseY=rect.y+rect.h-half;
                 const tipY=baseY-a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, baseY);
+                ctx.moveTo(rx-s, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+s, baseY);
                 ctx.closePath(); ctx.stroke();
             }
         }
@@ -322,10 +326,10 @@ class RuneFader {
         for(const c of checks){
             if(this._mods[c.mod] && Math.abs(c.v)<0.001){
                 ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=3.6;
-                const bx=rect.x+1.8, ex=rect.x+rect.w-1.8;
+                const bx=rect.x+1.8, ex=rect.x+rect.w-1.8, hs=spread*0.35;
                 ctx.beginPath();
-                ctx.moveTo(bx, ry-spread); ctx.lineTo(bx, ry+spread);
-                ctx.moveTo(ex, ry-spread); ctx.lineTo(ex, ry+spread);
+                ctx.moveTo(bx, ry-hs); ctx.lineTo(bx, ry+hs);
+                ctx.moveTo(ex, ry-hs); ctx.lineTo(ex, ry+hs);
                 ctx.stroke();
             }
         }
@@ -339,10 +343,10 @@ class RuneFader {
         for(const c of checks){
             if(this._mods[c.mod] && Math.abs(c.v)<0.001){
                 ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=3.6;
-                const ty=rect.y+1.8, by=rect.y+rect.h-1.8;
+                const ty=rect.y+1.8, by=rect.y+rect.h-1.8, hs=spread*0.35;
                 ctx.beginPath();
-                ctx.moveTo(rx-spread, ty); ctx.lineTo(rx+spread, ty);
-                ctx.moveTo(rx-spread, by); ctx.lineTo(rx+spread, by);
+                ctx.moveTo(rx-hs, ty); ctx.lineTo(rx+hs, ty);
+                ctx.moveTo(rx-hs, by); ctx.lineTo(rx+hs, by);
                 ctx.stroke();
             }
         }
