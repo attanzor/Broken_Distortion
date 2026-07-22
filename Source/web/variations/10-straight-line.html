@@ -315,7 +315,7 @@ class RuneFader {
         ];
         for(const c of checks){
             if(this._mods[c.mod] && Math.abs(c.v)<0.001){
-                ctx.strokeStyle=rgba(c.col,0.5); ctx.lineWidth=1.2;
+                ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=1.8;
                 ctx.beginPath();
                 ctx.moveTo(rect.x, ry-spread); ctx.lineTo(rect.x, ry+spread);
                 ctx.moveTo(rect.x+rect.w, ry-spread); ctx.lineTo(rect.x+rect.w, ry+spread);
@@ -331,7 +331,7 @@ class RuneFader {
         ];
         for(const c of checks){
             if(this._mods[c.mod] && Math.abs(c.v)<0.001){
-                ctx.strokeStyle=rgba(c.col,0.5); ctx.lineWidth=1.2;
+                ctx.strokeStyle=rgba(c.col,1); ctx.lineWidth=1.8;
                 ctx.beginPath();
                 ctx.moveTo(rx-spread, rect.y); ctx.lineTo(rx+spread, rect.y);
                 ctx.moveTo(rx-spread, rect.y+rect.h); ctx.lineTo(rx+spread, rect.y+rect.h);
