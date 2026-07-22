@@ -213,7 +213,7 @@ class RuneFader {
         if(Math.abs(offset)<0.5)return;
         const tipX=Math.max(rLeft,Math.min(rRight,hp+offset));
         const dotR=(spread+4)/2;
-        ctx.strokeStyle=rgba(CREAM,0.4); ctx.lineWidth=lw*2;
+        ctx.strokeStyle=rgba(CREAM,0.4); ctx.lineWidth=lw*4;
         ctx.beginPath(); ctx.moveTo(hp,ry); ctx.lineTo(tipX,ry); ctx.stroke();
         ctx.fillStyle=rgba(CREAM,0.85);
         ctx.beginPath(); ctx.ellipse(tipX,ry,dotR,dotR,0,0,Math.PI*2); ctx.fill();
@@ -224,7 +224,7 @@ class RuneFader {
         if(Math.abs(offset)<0.5)return;
         const tipY=Math.max(rTop,Math.min(rBot,hp-offset));
         const dotR=(spread+4)/2;
-        ctx.strokeStyle=rgba(CREAM,0.4); ctx.lineWidth=lw*2;
+        ctx.strokeStyle=rgba(CREAM,0.4); ctx.lineWidth=lw*4;
         ctx.beginPath(); ctx.moveTo(rx,hp); ctx.lineTo(rx,tipY); ctx.stroke();
         ctx.fillStyle=rgba(CREAM,0.85);
         ctx.beginPath(); ctx.ellipse(rx,tipY,dotR,dotR,0,0,Math.PI*2); ctx.fill();
