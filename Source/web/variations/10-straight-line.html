@@ -32,7 +32,7 @@
 <div class="instructions">
   Drag = value &ensp; Shift+drag = slope (seafoam) &ensp; Alt+drag = jitter (violet) &ensp;
   Cmd+drag = modulation (coral) &ensp; Ctrl+click = popup &ensp;
-  White diamond = mod feedback (moves with handle)
+  White line = mod feedback (moves with handle)
 </div>
 
 <script>
@@ -216,6 +216,54 @@ class RuneFader {
         ctx.strokeStyle=rgba(CREAM,0.2);
         ctx.lineWidth=lw;
         ctx.beginPath(); ctx.moveTo(rx-h,my); ctx.lineTo(rx+h,my); ctx.stroke();
+    }
+
+    // ── Outlined arrows from rect top corners ──
+    _drawOutlineArrowsH(ctx,rect,ry,spread){
+        const arrows=[
+            {v:this.modSmoothed, col:CORAL},
+            {v:this.slpSmoothed, col:SEAFOAM},
+            {v:this.jitSmoothed, col:VIOLET},
+        ].filter(a=>Math.abs(a.v)>0.001);
+        arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
+        for(const a of arrows){
+            const alpha=0.25+Math.abs(a.v)*0.40;
+            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=1.8; ctx.lineJoin='miter';
+            if(a.v>0){
+                const tipX=rect.x+a.v*rect.w;
+                ctx.beginPath();
+                ctx.moveTo(rect.x, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(rect.x, ry+spread);
+                ctx.closePath(); ctx.stroke();
+            }else{
+                const tipX=rect.x+rect.w+a.v*rect.w;
+                ctx.beginPath();
+                ctx.moveTo(rect.x+rect.w, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(rect.x+rect.w, ry+spread);
+                ctx.closePath(); ctx.stroke();
+            }
+        }
+    }
+    _drawOutlineArrowsV(ctx,rect,rx,spread){
+        const arrows=[
+            {v:this.modSmoothed, col:CORAL},
+            {v:this.slpSmoothed, col:SEAFOAM},
+            {v:this.jitSmoothed, col:VIOLET},
+        ].filter(a=>Math.abs(a.v)>0.001);
+        arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
+        for(const a of arrows){
+            const alpha=0.25+Math.abs(a.v)*0.40;
+            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=1.8; ctx.lineJoin='miter';
+            if(a.v<0){
+                const tipY=rect.y+Math.abs(a.v)*rect.h;
+                ctx.beginPath();
+                ctx.moveTo(rx-spread, rect.y); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, rect.y);
+                ctx.closePath(); ctx.stroke();
+            }else{
+                const tipY=rect.y+rect.h-a.v*rect.h;
+                ctx.beginPath();
+                ctx.moveTo(rx-spread, rect.y+rect.h); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, rect.y+rect.h);
+                ctx.closePath(); ctx.stroke();
+            }
+        }
     }
 
     destroy(){
