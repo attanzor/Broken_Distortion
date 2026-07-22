@@ -269,7 +269,7 @@ class RuneFader {
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
             const half=lw/2, inset=rect.w-lw;
-            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='round';
+            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter'; ctx.miterLimit=50;
             if(a.v>0){
                 const baseX=rect.x+half;
                 const tipX=baseX+a.v*inset;
@@ -295,7 +295,7 @@ class RuneFader {
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
             const half=lw/2, inset=rect.h-lw;
-            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='round';
+            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter'; ctx.miterLimit=50;
             if(a.v<0){
                 const baseY=rect.y+half;
                 const tipY=baseY+Math.abs(a.v)*inset;
