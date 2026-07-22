@@ -212,7 +212,7 @@ class RuneFader {
         const offset=this.appSmoothed*0.5*railW;
         if(Math.abs(offset)<0.5)return;
         const tipX=Math.max(rLeft,Math.min(rRight,hp+offset));
-        ctx.strokeStyle=rgba(CREAM,0.15);
+        ctx.strokeStyle=rgba(CREAM,0.7);
         ctx.lineWidth=lw;
         ctx.beginPath();
         ctx.moveTo(hp,ry-spread*0.7); ctx.lineTo(tipX,ry); ctx.lineTo(hp,ry+spread*0.7);
@@ -223,7 +223,7 @@ class RuneFader {
         const offset=this.appSmoothed*0.5*railH;
         if(Math.abs(offset)<0.5)return;
         const tipY=Math.max(rTop,Math.min(rBot,hp-offset));
-        ctx.strokeStyle=rgba(CREAM,0.15);
+        ctx.strokeStyle=rgba(CREAM,0.7);
         ctx.lineWidth=lw;
         ctx.beginPath();
         ctx.moveTo(rx-spread*0.7,hp); ctx.lineTo(rx,tipY); ctx.lineTo(rx+spread*0.7,hp);
