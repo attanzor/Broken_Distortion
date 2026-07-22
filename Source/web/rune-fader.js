@@ -58,6 +58,8 @@ class RuneFader
         this._dragOrigin = 0;
 
         canvas.addEventListener ('mousedown',  this._down = this._down.bind (this));
+        this._move = this._move.bind (this);
+        this._up   = this._up.bind (this);
         canvas.addEventListener ('contextmenu', e => e.preventDefault());
         canvas.addEventListener ('wheel', this._wheel = this._wheel.bind (this), { passive: false });
         canvas.style.cursor = this.h ? 'ew-resize' : 'ns-resize';
@@ -91,8 +93,11 @@ class RuneFader
         return r.bot - this.value * (r.bot - r.top);
     }
 
-    _valFromMouse (mx, my)
+    _valFromClient (cx, cy)
     {
+        const rect = this.c.getBoundingClientRect();
+        const mx = cx - rect.left;
+        const my = cy - rect.top;
         const r = this._rail();
         const v = this.h
             ? (mx - r.left) / (r.right - r.left)
@@ -110,9 +115,9 @@ class RuneFader
         if (e.shiftKey)               { this._drag = 'slope';  this._dragOrigin = this.slpTarget; }
         else if (e.altKey)            { this._drag = 'jitter'; this._dragOrigin = this.jitTarget; }
         else if (e.metaKey)           { this._drag = 'mod';    this._dragOrigin = this.modTarget; }
-        else
+else
         {
-            const v = this._valFromMouse (e.offsetX, e.offsetY);
+            const v = this._valFromClient (e.clientX, e.clientY);
             this.value = v;
             this._onValue (v);
             this._drag = 'value';
@@ -120,7 +125,7 @@ class RuneFader
         this._dragStart = this.h ? e.clientX : e.clientY;
         document.addEventListener ('mousemove', this._move);
         document.addEventListener ('mouseup',   this._up);
-        if (this._drag !== 'value') this._applyDrag (e);
+        this._applyDrag (e);
         e.preventDefault();
     }
 
@@ -145,7 +150,7 @@ class RuneFader
         }
         else
         {
-            this.value = this._valFromMouse (e.offsetX, e.offsetY);
+            this.value = this._valFromClient (e.clientX, e.clientY);
             this._onValue (this.value);
         }
     }
