@@ -32,7 +32,8 @@
 <div class="instructions">
   Drag = value &ensp; Shift+drag = slope (seafoam) &ensp; Alt+drag = jitter (violet) &ensp;
   Cmd+drag = modulation (coral) &ensp; Ctrl+click = popup &ensp;
-  White line = mod feedback (moves with handle)
+  White line = mod feedback (moves with handle) &ensp;
+  Double-click + mod = reset that arrow
 </div>
 
 <script>
@@ -60,8 +61,17 @@ class RuneFader {
         this.modTarget=0; this.modSmoothed=0; this.slpTarget=0; this.slpSmoothed=0;
         this.jitTarget=0; this.jitSmoothed=0; this.appTarget=0; this.appSmoothed=0;
         this._drag='none'; this._dragStart=0; this._dragOrigin=0;
+        this._mods={shift:false, alt:false, meta:false};
         canvas.addEventListener('mousedown',this._down=this._down.bind(this));
+        this._keydown=(e)=>{ if(e.shiftKey||e.altKey||e.metaKey){ this._mods.shift=e.shiftKey; this._mods.alt=e.altKey; this._mods.meta=e.metaKey; } };
+        this._keyup=(e)=>{ if(['Shift','Alt','Meta'].includes(e.key)){ this._mods.shift=e.shiftKey; this._mods.alt=e.altKey; this._mods.meta=e.metaKey; } };
+        document.addEventListener('keydown',this._keydown); document.addEventListener('keyup',this._keyup);
         this._move=this._move.bind(this); this._up=this._up.bind(this);
+        canvas.addEventListener('dblclick',this._dblclick=(e)=>{
+            if(e.shiftKey){ this.slpTarget=0; this._onSlope(0); }
+            else if(e.altKey){ this.jitTarget=0; this._onJitter(0); }
+            else if(e.metaKey){ this.modTarget=0; this._onModulation(0); }
+        });
         canvas.addEventListener('contextmenu',e=>e.preventDefault());
         canvas.addEventListener('wheel',this._wheel=this._wheel.bind(this),{passive:false});
         canvas.style.cursor=this.h?'ew-resize':'ns-resize';
@@ -221,14 +231,15 @@ class RuneFader {
     // ── Outlined arrows from rect top corners ──
     _drawOutlineArrowsH(ctx,rect,ry,spread){
         const arrows=[
-            {v:this.modSmoothed, col:CORAL},
-            {v:this.slpSmoothed, col:SEAFOAM},
-            {v:this.jitSmoothed, col:VIOLET},
+            {v:this.modSmoothed, col:CORAL, mod:'meta'},
+            {v:this.slpSmoothed, col:SEAFOAM, mod:'shift'},
+            {v:this.jitSmoothed, col:VIOLET, mod:'alt'},
         ].filter(a=>Math.abs(a.v)>0.001);
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         for(const a of arrows){
             const alpha=0.25+Math.abs(a.v)*0.40;
-            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=1.8; ctx.lineJoin='miter';
+            const lw=this._mods[a.mod]?3.6:1.8;
+            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=lw; ctx.lineJoin='miter';
             if(a.v>0){
                 const tipX=rect.x+a.v*rect.w;
                 ctx.beginPath();
@@ -244,14 +255,15 @@ class RuneFader {
     }
     _drawOutlineArrowsV(ctx,rect,rx,spread){
         const arrows=[
-            {v:this.modSmoothed, col:CORAL},
-            {v:this.slpSmoothed, col:SEAFOAM},
-            {v:this.jitSmoothed, col:VIOLET},
+            {v:this.modSmoothed, col:CORAL, mod:'meta'},
+            {v:this.slpSmoothed, col:SEAFOAM, mod:'shift'},
+            {v:this.jitSmoothed, col:VIOLET, mod:'alt'},
         ].filter(a=>Math.abs(a.v)>0.001);
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         for(const a of arrows){
             const alpha=0.25+Math.abs(a.v)*0.40;
-            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=1.8; ctx.lineJoin='miter';
+            const lw=this._mods[a.mod]?3.6:1.8;
+            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=lw; ctx.lineJoin='miter';
             if(a.v<0){
                 const tipY=rect.y+Math.abs(a.v)*rect.h;
                 ctx.beginPath();
@@ -268,8 +280,11 @@ class RuneFader {
 
     destroy(){
         this.c.removeEventListener('mousedown',this._down);
+        this.c.removeEventListener('dblclick',this._dblclick);
         this.c.removeEventListener('wheel',this._wheel);
         this.c.removeEventListener('contextmenu',()=>{});
+        document.removeEventListener('keydown',this._keydown);
+        document.removeEventListener('keyup',this._keyup);
         document.removeEventListener('mousemove',this._move);
         document.removeEventListener('mouseup',this._up);
     }
