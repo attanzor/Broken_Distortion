@@ -268,19 +268,19 @@ class RuneFader {
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
-            const half=lw/2, inset=rect.w-lw, hh=spread*Math.abs(a.v);
-            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter';
+            const half=lw/2, inset=rect.w-lw;
+            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='round';
             if(a.v>0){
                 const baseX=rect.x+half;
                 const tipX=baseX+a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(baseX, ry-hh); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+hh);
+                ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+spread);
                 ctx.closePath(); ctx.stroke();
             }else{
                 const baseX=rect.x+rect.w-half;
                 const tipX=baseX+a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(baseX, ry-hh); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+hh);
+                ctx.moveTo(baseX, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(baseX, ry+spread);
                 ctx.closePath(); ctx.stroke();
             }
         }
@@ -294,19 +294,19 @@ class RuneFader {
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         for(const a of arrows){
             const lw=this._mods[a.mod]?3.6:1.8;
-            const half=lw/2, inset=rect.h-lw, hw=spread*Math.abs(a.v);
-            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='miter';
+            const half=lw/2, inset=rect.h-lw;
+            ctx.strokeStyle=rgba(a.col,1); ctx.lineWidth=lw; ctx.lineJoin='round';
             if(a.v<0){
                 const baseY=rect.y+half;
                 const tipY=baseY+Math.abs(a.v)*inset;
                 ctx.beginPath();
-                ctx.moveTo(rx-hw, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+hw, baseY);
+                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, baseY);
                 ctx.closePath(); ctx.stroke();
             }else{
                 const baseY=rect.y+rect.h-half;
                 const tipY=baseY-a.v*inset;
                 ctx.beginPath();
-                ctx.moveTo(rx-hw, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+hw, baseY);
+                ctx.moveTo(rx-spread, baseY); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, baseY);
                 ctx.closePath(); ctx.stroke();
             }
         }
