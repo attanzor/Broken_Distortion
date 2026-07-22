@@ -1,270 +1,172 @@
-// rune-fader.js — Canvas-based reproduction of gravel::RuneFader
-// Single file, zero dependencies. Supports horizontal + vertical orientations,
-// 4 modulation arrow types, modifier-key interactions, smooth animation.
+// rune-fader.js — Canvas reproduction of gravel::RuneFader
+// Arrows anchored at rail endpoints. Modifier keys switch drag mode globally.
 
-const GROUND  = '#11100E';
-const VOID    = '#D5D0B8';
-const EMBER   = '#EF8B48';
-const GREEN   = '#4CAF50';
-const PURPLE  = '#AB47BC';
+const GROUND = '#11100E';
+const VOID   = '#D5D0B8';
+const EMBER  = '#EF8B48';
+const GREEN  = '#4CAF50';
+const PURPLE = '#AB47BC';
 
-function hexToRgba (hex, alpha)
+function rgba (hex, a)
 {
     const r = parseInt (hex.slice (1, 3), 16);
     const g = parseInt (hex.slice (3, 5), 16);
     const b = parseInt (hex.slice (5, 7), 16);
-    return `rgba(${r},${g},${b},${alpha})`;
+    return `rgba(${r},${g},${b},${a})`;
 }
 
 function mulSat (hex, s)
 {
-    const r = parseInt (hex.slice (1, 3), 16);
-    const g = parseInt (hex.slice (3, 5), 16);
-    const b = parseInt (hex.slice (5, 7), 16);
+    const r = parseInt (hex.slice (1, 3), 16), g = parseInt (hex.slice (3, 5), 16), b = parseInt (hex.slice (5, 7), 16);
     const max = Math.max (r, g, b) / 255;
     if (max === 0) return hex;
-    const rr = Math.round (r * (1 - s + s / max));
-    const gg = Math.round (g * (1 - s + s / max));
-    const bb = Math.round (b * (1 - s + s / max));
+    const rr = Math.round (r * (1 - s + s / max)), gg = Math.round (g * (1 - s + s / max)), bb = Math.round (b * (1 - s + s / max));
     return '#' + [rr, gg, bb].map (v => v.toString (16).padStart (2, '0')).join ('');
 }
 
 class RuneFader
 {
     /** @param {HTMLCanvasElement} canvas
-     *  @param {object} opts
-     *  opts.label       — uppercase label string
-     *  opts.horizontal  — true for horizontal, false for vertical
-     *  opts.interaction — () => void, called on any mousedown
-     *  opts.onCtrlClick — () => void, called on Ctrl+click
-     *  opts.onValue     — (normalized: number) => void, 0..1
-     *  opts.onModulation — (amount: number) => void, Cmd-drag on orange arrow
-     *  opts.onSlope     — (amount: number) => void, Shift-drag on green arrow
-     *  opts.onJitter    — (amount: number) => void, Alt-drag on purple arrow
-     *  opts.value       — initial normalized value (0..1), default 0.5
-     */
+     *  opts.label, opts.horizontal, opts.value (0..1)
+     *  opts.onValue(norm), opts.onModulation(amount), opts.onSlope(amount), opts.onJitter(amount)
+     *  opts.onCtrlClick() */
     constructor (canvas, opts = {})
     {
-        this.canvas = canvas;
+        this.c = canvas;
         this.ctx = canvas.getContext ('2d');
-        this.horizontal = opts.horizontal !== false;
+        this.h = opts.horizontal !== false;
         this.label = opts.label || '';
-
-        this.interaction = opts.interaction || (() => {});
-        this.onCtrlClick  = opts.onCtrlClick  || (() => {});
-        this.onValue      = opts.onValue      || (() => {});
-        this.onModulation = opts.onModulation || (() => {});
-        this.onSlope      = opts.onSlope      || (() => {});
-        this.onJitter     = opts.onJitter     || (() => {});
-
         this.value = opts.value !== undefined ? opts.value : 0.5;
         this.explEnabled = true;
 
-        this.modTarget  = 0.0;
-        this.modApplied = 0.0;
-        this.slpAmount  = 0.0;
-        this.jitAmount  = 0.0;
+        this._onValue      = opts.onValue      || (() => {});
+        this._onModulation = opts.onModulation || (() => {});
+        this._onSlope      = opts.onSlope      || (() => {});
+        this._onJitter     = opts.onJitter     || (() => {});
+        this._onCtrlClick  = opts.onCtrlClick  || (() => {});
+        this._onInteraction= opts.onInteraction|| (() => {});
 
-        this.modSmoothed  = 0.0;
-        this.slpSmoothed  = 0.0;
-        this.jitSmoothed  = 0.0;
-        this.appSmoothed  = 0.0;
+        // Modulation targets
+        this.modTarget  = 0;   this.modSmoothed  = 0;
+        this.slpTarget  = 0;   this.slpSmoothed  = 0;
+        this.jitTarget  = 0;   this.jitSmoothed  = 0;
+        this.appTarget  = 0;   this.appSmoothed  = 0;
 
-        this.dragTarget = 'none'; // 'value' | 'mod' | 'slope' | 'jitter'
-        this.isDragging = false;
+        // Drag state: 'none' | 'value' | 'mod' | 'slope' | 'jitter'
+        this._drag = 'none';
+        this._dragStart = 0;
+        this._dragOrigin = 0;
 
-        this._onMouseDown = this._onMouseDown.bind (this);
-        this._onMouseMove = this._onMouseMove.bind (this);
-        this._onMouseUp   = this._onMouseUp.bind (this);
-        this._onWheel     = this._onWheel.bind (this);
-
-        canvas.addEventListener ('mousedown', this._onMouseDown);
-        canvas.addEventListener ('mousemove', this._onMouseMove);
-        canvas.addEventListener ('mouseup',   this._onMouseUp);
-        canvas.addEventListener ('mouseleave',this._onMouseUp);
-        canvas.addEventListener ('wheel',     this._onWheel, { passive: false });
+        canvas.addEventListener ('mousedown',  this._down = this._down.bind (this));
+        canvas.addEventListener ('mousemove',  this._move = this._move.bind (this));
+        canvas.addEventListener ('mouseup',    this._up   = this._up.bind (this));
+        canvas.addEventListener ('mouseleave', this._up);
         canvas.addEventListener ('contextmenu', e => e.preventDefault());
+        canvas.addEventListener ('wheel', this._wheel = this._wheel.bind (this), { passive: false });
+        canvas.style.cursor = this.h ? 'ew-resize' : 'ns-resize';
 
         this._tick();
     }
 
-    // --- Setters for external modulation updates ---
-    setTargetModulation (v)      { this.modTarget = v; }
-    setAppliedModulation (v)     { this.modApplied = v; }
-    setSlopeModulation (v)       { this.slpAmount = v; }
-    setJitterModulation (v)      { this.jitAmount = v; }
-    setExplEnabled (e)           { this.explEnabled = e; }
+    // --- Setters ---
+    setTargetModulation (v)  { this.modTarget = Math.max (-1, Math.min (1, v)); }
+    setAppliedModulation (v) { this.appTarget = Math.max (-1, Math.min (1, v)); }
+    setSlopeModulation (v)   { this.slpTarget = Math.max (-1, Math.min (1, v)); }
+    setJitterModulation (v)  { this.jitTarget = Math.max (-1, Math.min (1, v)); }
+    setExplEnabled (e)       { this.explEnabled = e; }
 
-    // --- Hit testing ---
-    _railY () { const r = this.canvas.getBoundingClientRect(); return r.height / 2 + 7; }
-    _railX () { const r = this.canvas.getBoundingClientRect(); return r.width / 2; }
-    _handleHalf () { return this.horizontal ? 16 : 19; }
-    _spread () { return this._handleHalf() * 2 / 3; }
+    // --- Metrics ---
+    _rail ()
+    {
+        const w = this.c.width, hh = this.c.height;
+        if (this.h)
+        {
+            const h = hh / 2 + 7;
+            return { left: 18, right: w - 18, y: h, hh: 16 };
+        }
+        return { top: 30, bot: hh - 16, x: w / 2, hh: 19 };
+    }
 
     _handlePos ()
     {
-        const r = this.canvas.getBoundingClientRect();
-        const hh = this._handleHalf();
-        const realRange = r.width - hh * 2;
-        return this.horizontal
-            ? hh + this.value * realRange
-            : hh + this.value * (r.height - hh * 2);
+        const r = this._rail();
+        if (this.h) return r.left + this.value * (r.right - r.left);
+        return r.bot - this.value * (r.bot - r.top);
     }
 
-    _setValueFromClient (clientX, clientY)
+    _valFromMouse (mx, my)
     {
-        const r = this.canvas.getBoundingClientRect();
-        const hh = this._handleHalf();
-        const v = this.horizontal
-            ? (clientX - r.left - hh) / (r.width  - hh * 2)
-            : (clientY - r.top  - hh) / (r.height - hh * 2);
-        this.value = Math.max (0, Math.min (1, v));
-        this.onValue (this.value);
+        const r = this._rail();
+        const v = this.h
+            ? (mx - r.left) / (r.right - r.left)
+            : 1 - (my - r.top) / (r.bot - r.top);
+        return Math.max (0, Math.min (1, v));
     }
 
-    _setModFromClient (clientX, clientY)
+    // --- Mouse: modifier keys switch drag mode (no arrow hit-testing) ---
+    // Priority: Ctrl > Shift > Alt > Cmd > plain value drag
+    _down (e)
     {
-        const r = this.canvas.getBoundingClientRect();
-        const range = this.horizontal ? r.height : r.width;
-        const raw = (this.horizontal
-            ? -(clientY - r.top - r.height / 2) / range
-            :  (clientX - r.left - r.width / 2)  / range) * 2;
-        this.modTarget = Math.max (-1, Math.min (1, raw));
-        this.onModulation (this.modTarget);
-    }
+        this._onInteraction();
+        if (e.ctrlKey) { this._onCtrlClick(); return; }
 
-    _setSlopeFromClient (clientX, clientY)
-    {
-        const r = this.canvas.getBoundingClientRect();
-        const range = this.horizontal ? r.height : r.width;
-        const raw = (this.horizontal
-            ? -(clientY - r.top - r.height / 2) / range
-            :  (clientX - r.left - r.width / 2)  / range) * 2;
-        this.slpAmount = Math.max (-1, Math.min (1, raw));
-        this.onSlope (this.slpAmount);
-    }
-
-    _setJitterFromClient (clientX, clientY)
-    {
-        const r = this.canvas.getBoundingClientRect();
-        const range = this.horizontal ? r.height : r.width;
-        const raw = (this.horizontal
-            ? -(clientY - r.top - r.height / 2) / range
-            :  (clientX - r.left - r.width / 2)  / range) * 2;
-        this.jitAmount = Math.max (-1, Math.min (1, raw));
-        this.onJitter (this.jitAmount);
-    }
-
-    // --- Mouse events ---
-    _onMouseDown (e)
-    {
-        this.interaction();
-
-        if (e.ctrlKey || e.metaKey)
-        {
-            this.onCtrlClick();
-            return;
-        }
-
-        const r = this.canvas.getBoundingClientRect();
-        const mx = e.clientX, my = e.clientY;
-        const hp = this._handlePos();
-        const hh = this._handleHalf();
-        const spread = this._spread();
-
-        // Check arrow hit zones first
-        const hx = this.horizontal ? hp : r.width / 2;
-        const hy = this.horizontal ? this._railY() : hp;
-        const tipDist = this.horizontal
-            ? my - hy
-            : mx - hx;
-
-        const arrowHitTol = spread + 6;
-        if (Math.abs (tipDist) < arrowHitTol && Math.abs (tipDist) > 2)
-        {
-            if (e.shiftKey && Math.abs (this.slpAmount) > 0.001)
-            {
-                this.dragTarget = 'slope';
-                this.isDragging = true;
-                this._setSlopeFromClient (mx, my);
-                e.preventDefault();
-                return;
-            }
-            if (e.altKey && Math.abs (this.jitAmount) > 0.001)
-            {
-                this.dragTarget = 'jitter';
-                this.isDragging = true;
-                this._setJitterFromClient (mx, my);
-                e.preventDefault();
-                return;
-            }
-            if ((e.metaKey || e.shiftKey) && Math.abs (this.modTarget) > 0.001)
-            {
-                this.dragTarget = 'mod';
-                this.isDragging = true;
-                this._setModFromClient (mx, my);
-                e.preventDefault();
-                return;
-            }
-        }
-
-        // Default: drag value
-        this.dragTarget = 'value';
-        this.isDragging = true;
-        if (e.shiftKey && this.dragTarget === 'value')
-        {
-            // fine-tune
-            this._dragOrigin = this.value;
-            this._dragClient = this.horizontal ? mx : my;
-        }
+        if (e.shiftKey)               { this._drag = 'slope';  this._dragOrigin = this.slpTarget; }
+        else if (e.altKey)            { this._drag = 'jitter'; this._dragOrigin = this.jitTarget; }
+        else if (e.metaKey)           { this._drag = 'mod';    this._dragOrigin = this.modTarget; }
         else
         {
-            this._setValueFromClient (mx, my);
+            const v = this._valFromMouse (e.offsetX, e.offsetY);
+            this.value = v;
+            this._onValue (v);
+            this._drag = 'value';
         }
+        this._dragStart = this.h ? e.clientX : e.clientY;
+        if (this._drag !== 'value') this._applyDrag (e);
         e.preventDefault();
     }
 
-    _onMouseMove (e)
+    _applyDrag (e)
     {
-        if (!this.isDragging) return;
-        const mx = e.clientX, my = e.clientY;
+        const rangeRaw = this.h ? (this.c.width - 36) : (this.c.height - 46);
+        const range = rangeRaw / 2; // kCmdSensitivity = 2.0
+        const delta = this.h
+            ? (e.clientX - this._dragStart) / range
+            : -(e.clientY - this._dragStart) / range;
 
-        if (this.dragTarget === 'value')
+        const mods = ['slope', 'jitter', 'mod'];
+        const idx = mods.indexOf (this._drag);
+        if (idx >= 0)
         {
-            if (this._dragOrigin !== undefined)
-            {
-                const r = this.canvas.getBoundingClientRect();
-                const range = this.horizontal ? r.width : r.height;
-                const delta = this.horizontal
-                    ? (mx - this._dragClient) / range
-                    : (my - this._dragClient) / range;
-                this.value = Math.max (0, Math.min (1, this._dragOrigin + delta * 0.1));
-                this.onValue (this.value);
-            }
-            else
-            {
-                this._setValueFromClient (mx, my);
-            }
+            const getter = [()=>this.slpTarget, ()=>this.jitTarget, ()=>this.modTarget][idx];
+            const setter = [(v)=>{ this.slpTarget=v; this._onSlope(v); },
+                            (v)=>{ this.jitTarget=v; this._onJitter(v); },
+                            (v)=>{ this.modTarget=v; this._onModulation(v); }][idx];
+            const val = Math.max (-1, Math.min (1, this._dragOrigin + delta));
+            setter (val);
         }
-        else if (this.dragTarget === 'mod')   this._setModFromClient (mx, my);
-        else if (this.dragTarget === 'slope') this._setSlopeFromClient (mx, my);
-        else if (this.dragTarget === 'jitter')this._setJitterFromClient (mx, my);
+        else
+        {
+            this.value = this._valFromMouse (e.offsetX, e.offsetY);
+            this._onValue (this.value);
+        }
     }
 
-    _onMouseUp ()
+    _move (e)
     {
-        this.isDragging = false;
-        this.dragTarget = 'none';
-        this._dragOrigin = undefined;
+        if (this._drag === 'none') return;
+        this._applyDrag (e);
     }
 
-    _onWheel (e)
+    _up () { this._drag = 'none'; }
+
+    _wheel (e)
     {
         if (e.shiftKey)
         {
             e.preventDefault();
-            this.value = Math.max (0, Math.min (1, this.value + (e.deltaY < 0 ? 0.001 : -0.001)));
-            this.onValue (this.value);
+            const step = e.deltaY < 0 ? 0.001 : -0.001;
+            this.value = Math.max (0, Math.min (1, this.value + step));
+            this._onValue (this.value);
         }
     }
 
@@ -273,9 +175,9 @@ class RuneFader
     {
         const c = 0.18;
         this.modSmoothed += (this.modTarget - this.modSmoothed) * c;
-        this.slpSmoothed += (this.slpAmount - this.slpSmoothed) * c;
-        this.jitSmoothed += (this.jitAmount - this.jitSmoothed) * c;
-        this.appSmoothed += (this.modApplied - this.appSmoothed) * c;
+        this.slpSmoothed += (this.slpTarget - this.slpSmoothed) * c;
+        this.jitSmoothed += (this.jitTarget - this.jitSmoothed) * c;
+        this.appSmoothed += (this.appTarget - this.appSmoothed) * c;
         this._paint();
         requestAnimationFrame (() => this._tick());
     }
@@ -284,136 +186,142 @@ class RuneFader
     _paint ()
     {
         const ctx = this.ctx;
-        const w = this.canvas.width, h = this.canvas.height;
-        ctx.clearRect (0, 0, w, h);
+        const w = this.c.width, hh = this.c.height;
+        ctx.clearRect (0, 0, w, hh);
 
-        const railA = this.explEnabled ? (this.horizontal ? 0.80 : 0.54) : 0.30;
-        const railC = hexToRgba (VOID, railA);
+        const railA = this.explEnabled ? (this.h ? 0.80 : 0.54) : 0.30;
+        const railC = rgba (VOID, railA);
         const hndC  = this.explEnabled ? EMBER : mulSat (EMBER, 0.3);
-        const hh = this._handleHalf();
-        const hp = this._handlePos();
+        const r = this._rail();
+        const hp  = this._handlePos();
+        const lw = this.h ? 2 : 1.4;
+        const rhh = r.hh;
+        const spread = this.h ? 10.667 : rhh * 2 / 3;
 
+        // Label
         ctx.textBaseline = 'top';
         ctx.textAlign = 'center';
-        ctx.fillStyle = hexToRgba (VOID, 0.76);
-        ctx.font = this.horizontal ? '13px sans-serif' : '11px sans-serif';
-        ctx.fillText (this.label.toUpperCase(),
-                       w / 2, this.horizontal ? 0 : h - 16);
+        ctx.fillStyle = rgba (VOID, 0.76);
+        ctx.font = (this.h ? '13px' : '11px') + ' sans-serif';
+        ctx.fillText (this.label.toUpperCase(), w / 2, this.h ? 0 : hh - 16);
 
-        if (this.horizontal)
+        if (this.h)
         {
-            const ry = h / 2 + 7;
             // Rail
             ctx.strokeStyle = railC;
-            ctx.lineWidth = 2;
+            ctx.lineWidth = lw;
             ctx.beginPath();
-            ctx.moveTo (18, ry);
-            ctx.lineTo (w - 18, ry);
+            ctx.moveTo (r.left, r.y); ctx.lineTo (r.right, r.y);
             ctx.stroke();
             // End caps
             ctx.beginPath();
-            ctx.moveTo (18, ry - hh);
-            ctx.lineTo (18, ry + hh);
-            ctx.moveTo (w - 18, ry - hh);
-            ctx.lineTo (w - 18, ry + hh);
+            ctx.moveTo (r.left, r.y - rhh); ctx.lineTo (r.left, r.y + rhh);
+            ctx.moveTo (r.right, r.y - rhh); ctx.lineTo (r.right, r.y + rhh);
             ctx.stroke();
             // Handle
             ctx.strokeStyle = hndC;
             ctx.beginPath();
-            ctx.moveTo (hp, ry - hh);
-            ctx.lineTo (hp, ry + hh);
+            ctx.moveTo (hp, r.y - rhh); ctx.lineTo (hp, r.y + rhh);
             ctx.stroke();
             ctx.fillStyle = hndC;
             ctx.beginPath();
-            ctx.ellipse (hp, ry, 4, 4, 0, 0, Math.PI * 2);
-            ctx.fill();
-            // Arrows
-            this._drawArrows (hp, ry, true);
+            ctx.ellipse (hp, r.y, lw, lw, 0, 0, Math.PI * 2); ctx.fill();
+            // Arrows — anchored at rail endpoints
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.modSmoothed, EMBER, 1.8);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.appSmoothed, VOID, 1.2);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.slpSmoothed, GREEN, 1.8);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.jitSmoothed, PURPLE, 1.8);
         }
         else
         {
-            const rx = w / 2;
-            const ry1 = 30;
-            const ry2 = h - 16;
             // Rail
             ctx.strokeStyle = railC;
-            ctx.lineWidth = 1.4;
+            ctx.lineWidth = lw;
             ctx.beginPath();
-            ctx.moveTo (rx, ry1);
-            ctx.lineTo (rx, ry2);
+            ctx.moveTo (r.x, r.top); ctx.lineTo (r.x, r.bot);
             ctx.stroke();
             // End caps
             ctx.beginPath();
-            ctx.moveTo (rx - hh, ry1);
-            ctx.lineTo (rx + hh, ry1);
-            ctx.moveTo (rx - hh, ry2);
-            ctx.lineTo (rx + hh, ry2);
+            ctx.moveTo (r.x - rhh, r.top); ctx.lineTo (r.x + rhh, r.top);
+            ctx.moveTo (r.x - rhh, r.bot); ctx.lineTo (r.x + rhh, r.bot);
             ctx.stroke();
             // Handle
-            ctx.strokeStyle = hexToRgba (VOID, this.explEnabled ? 1.0 : 0.3);
+            const vhndC = this.explEnabled ? rgba (VOID, 1.0) : rgba (VOID, 0.3);
+            ctx.strokeStyle = vhndC;
             ctx.beginPath();
-            ctx.moveTo (rx - hh, hp);
-            ctx.lineTo (rx + hh, hp);
+            ctx.moveTo (r.x - rhh, hp); ctx.lineTo (r.x + rhh, hp);
             ctx.stroke();
-            ctx.fillStyle = hexToRgba (VOID, this.explEnabled ? 1.0 : 0.3);
+            ctx.fillStyle = vhndC;
             ctx.beginPath();
-            ctx.ellipse (rx, hp, 4, 4, 0, 0, Math.PI * 2);
-            ctx.fill();
-            // Arrows
-            this._drawArrows (rx, hp, false);
+            ctx.ellipse (r.x, hp, lw, lw, 0, 0, Math.PI * 2); ctx.fill();
+            // Arrows — anchored at rail endpoints
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.modSmoothed, EMBER, 1.8);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.appSmoothed, VOID, 1.2);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.slpSmoothed, GREEN, 1.8);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.jitSmoothed, PURPLE, 1.8);
         }
     }
 
-    _drawArrow (ctx, cx, cy, value, colour, horizontal)
+    /** Horizontal arrow: base at rail endpoint, tip extends along rail */
+    _drawHArrow (ctx, rLeft, rRight, y, spread, value, colour, strokeW)
     {
-        if (Math.abs (value) < 0.001) return;
-        const spread = this._spread();
+        if (Math.abs (value) <= 0.001) return;
         const alpha = 0.25 + Math.abs (value) * 0.40;
-        const len = spread * 1.8;
-        const dir = value > 0 ? -1 : 1;
-
-        ctx.fillStyle = hexToRgba (colour, alpha);
+        ctx.strokeStyle = rgba (colour, alpha);
+        ctx.lineWidth = strokeW;
+        ctx.lineJoin = 'miter';
         ctx.beginPath();
-        if (horizontal)
+        if (value > 0)
         {
-            const tipY = cy + dir * len;
-            ctx.moveTo (cx, tipY);
-            ctx.lineTo (cx - spread, cy + dir * 4);
-            ctx.lineTo (cx + spread, cy + dir * 4);
+            const tipX = rLeft + value * (rRight - rLeft);
+            ctx.moveTo (rLeft, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rLeft, y + spread);
         }
         else
         {
-            const tipX = cx + dir * len;
-            ctx.moveTo (tipX, cy);
-            ctx.lineTo (cx + dir * 4, cy - spread);
-            ctx.lineTo (cx + dir * 4, cy + spread);
+            const tipX = rRight + value * (rRight - rLeft);
+            ctx.moveTo (rRight, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rRight, y + spread);
         }
         ctx.closePath();
-        ctx.fill();
+        ctx.stroke();
     }
 
-    _drawArrows (cx, cy, isH)
+    /** Vertical arrow: base at rail endpoint, tip extends along rail */
+    _drawVArrow (ctx, x, rTop, rBot, spread, value, colour, strokeW)
     {
-        this._drawArrow (this.ctx, cx, cy, this.modSmoothed, EMBER, isH);
-        this._drawArrow (this.ctx, cx, cy, this.appSmoothed, VOID, isH);
-        this._drawArrow (this.ctx, cx, cy, this.slpSmoothed, GREEN, isH);
-        this._drawArrow (this.ctx, cx, cy, this.jitSmoothed, PURPLE, isH);
-    }
-
-    // --- Utilities ---
-    setCanvasSize (w, h)
-    {
-        this.canvas.width = w;
-        this.canvas.height = h;
+        if (Math.abs (value) <= 0.001) return;
+        const alpha = 0.25 + Math.abs (value) * 0.40;
+        ctx.strokeStyle = rgba (colour, alpha);
+        ctx.lineWidth = strokeW;
+        ctx.beginPath();
+        if (value < 0)
+        {
+            const tipY = rTop + Math.abs (value) * (rBot - rTop);
+            ctx.moveTo (x - spread, rTop);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rTop);
+        }
+        else
+        {
+            const tipY = rBot - value * (rBot - rTop);
+            ctx.moveTo (x - spread, rBot);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rBot);
+        }
+        ctx.closePath();
+        ctx.stroke();
     }
 
     destroy ()
     {
-        this.canvas.removeEventListener ('mousedown', this._onMouseDown);
-        this.canvas.removeEventListener ('mousemove', this._onMouseMove);
-        this.canvas.removeEventListener ('mouseup', this._onMouseUp);
-        this.canvas.removeEventListener ('mouseleave', this._onMouseUp);
-        this.canvas.removeEventListener ('wheel', this._onWheel);
-        this.canvas.removeEventListener ('contextmenu', () => {});
+        this.c.removeEventListener ('mousedown',  this._down);
+        this.c.removeEventListener ('mousemove',  this._move);
+        this.c.removeEventListener ('mouseup',    this._up);
+        this.c.removeEventListener ('mouseleave', this._up);
+        this.c.removeEventListener ('wheel',      this._wheel);
+        this.c.removeEventListener ('contextmenu', () => {});
     }
 }

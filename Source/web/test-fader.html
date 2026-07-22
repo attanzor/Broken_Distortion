@@ -4,121 +4,51 @@
 <meta charset="utf-8">
 <title>RuneFader Test</title>
 <style>
-  body {
-    margin: 0; padding: 24px;
-    background: #11100E; color: #D5D0B8;
-    font-family: sans-serif; font-size: 11px;
-    user-select: none;
-  }
-  h1 { color: #EF8B48; font-size: 18px; font-weight: normal; margin: 0 0 16px 0; text-transform: uppercase; }
-  .section { margin-bottom: 24px; }
-  .section h2 { color: #D5D0B8; font-size: 12px; font-weight: normal; margin: 0 0 8px 0; text-transform: uppercase; }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; }
-  canvas { display: block; }
-  .info { display: flex; gap: 24px; margin-top: 12px; }
-  .info span { color: #EF8B48; font-weight: bold; }
+  body { margin:0; padding:48px; background:#11100E; color:#D5D0B8;
+         font-family:sans-serif; font-size:11px; }
+  h1 { color:#EF8B48; font-size:15px; text-transform:uppercase; margin:0 0 32px; }
+  canvas { display:block; margin-bottom:16px; }
+  .row { display:flex; gap:8px; align-items:flex-start; }
+  .info { color:#D5D0B8; font-size:11px; }
+  .info b { color:#EF8B48; }
+  .instructions { margin-top:48px; color:rgba(213,208,184,0.5); font-size:10px; line-height:1.6; }
 </style>
 </head>
 <body>
+<h1>RuneFader — Single Fader Test</h1>
 
-<h1>RuneFader — Web Component Test</h1>
-
-<div class="section">
-  <h2>Horizontal (THRESH LOW, modIndex 26)</h2>
-  <canvas id="faderH" width="260" height="42"></canvas>
-  <div class="info">
-    Value: <span id="valH">0.33</span>
-    Mod: <span id="modH">0.00</span>
-    Slope: <span id="slpH">0.00</span>
-    Jitter: <span id="jitH">0.00</span>
-  </div>
+<canvas id="f" width="300" height="42"></canvas>
+<div class="info">
+  Value: <b id="v">0.50</b> &nbsp;
+  Mod: <b id="m">0.00</b> &nbsp;
+  Slope: <b id="s">0.00</b> &nbsp;
+  Jitter: <b id="j">0.00</b>
 </div>
 
-<div class="section">
-  <h2>Vertical (MIX, modIndex 24)</h2>
-  <canvas id="faderV" width="48" height="120"></canvas>
-  <div class="info">
-    Value: <span id="valV">1.00</span>
-    Mod: <span id="modV">0.00</span>
-    Slope: <span id="slpV">0.00</span>
-    Jitter: <span id="jitV">0.00</span>
-  </div>
-</div>
-
-<div class="section">
-  <h2>Explore-disabled (dimmed appearance)</h2>
-  <canvas id="faderDim" width="260" height="42"></canvas>
-</div>
-
-<div class="section">
-  <h2>Layout sample — processing row</h2>
-  <div class="row">
-    <canvas id="threshL" width="130" height="24"></canvas>
-    <canvas id="threshH" width="130" height="24"></canvas>
-  </div>
-</div>
-
-<div class="section" style="margin-top:32px; color:#D5D0B8; font-size:10px; opacity:0.6;">
-  Instructions: Drag fader = change value. Cmd-drag near handle = modulation.<br>
-  Shift-drag near handle = slope. Alt-drag near handle = jitter.<br>
-  Ctrl+click = popup placeholder (check console).
+<div class="instructions">
+  Click/drag on fader → moves value<br>
+  Shift+drag → slope modulation (green arrow at rail edge)<br>
+  Alt+drag → jitter modulation (purple arrow at rail edge)<br>
+  Ctrl+click → opens popup (see console)
 </div>
 
 <script src="rune-fader.js"></script>
 <script>
-function makeFader (id, opts)
-{
-    const c = document.getElementById (id);
-    if (!c) return;
-    const f = new RuneFader (c, opts);
-    c._runeFader = f;
-    return f;
-}
-
-// Horizontal
-const fH = makeFader ('faderH', {
-    label: 'THRESH L', horizontal: true, value: 0.33,
-    onValue (v)     { document.getElementById ('valH').textContent = v.toFixed (3); },
-    onModulation (v){ document.getElementById ('modH').textContent = v.toFixed (3); },
-    onSlope (v)     { document.getElementById ('slpH').textContent = v.toFixed (3); },
-    onJitter (v)    { document.getElementById ('jitH').textContent = v.toFixed (3); },
-    onCtrlClick ()  { console.log ('Popup: THRESH LOW'); }
+const f = new RuneFader (document.getElementById ('f'), {
+    label: 'THRESH L', horizontal: true, value: 0.5,
+    onValue (v)      { document.getElementById ('v').textContent = v.toFixed(3); },
+    onModulation (v) { document.getElementById ('m').textContent = v.toFixed(3); },
+    onSlope (v)      { document.getElementById ('s').textContent = v.toFixed(3); },
+    onJitter (v)     { document.getElementById ('j').textContent = v.toFixed(3); },
+    onCtrlClick ()   { console.log('Popup: THRESH LOW'); },
 });
 
-// Vertical
-const fV = makeFader ('faderV', {
-    label: 'MIX', horizontal: false, value: 1.0,
-    onValue (v)     { document.getElementById ('valV').textContent = v.toFixed (3); },
-    onModulation (v){ document.getElementById ('modV').textContent = v.toFixed (3); },
-    onSlope (v)     { document.getElementById ('slpV').textContent = v.toFixed (3); },
-    onJitter (v)    { document.getElementById ('jitV').textContent = v.toFixed (3); },
-    onCtrlClick ()  { console.log ('Popup: MIX'); }
-});
-
-// Dimmed (explore-disabled)
-const fDim = makeFader ('faderDim', { label: 'POST EQ', horizontal: true, value: 0.75 });
-fDim.setExplEnabled (false);
-fDim.setTargetModulation (0.3);
-
-// Compact processing row
-makeFader ('threshL', { label: 'THRESH L', horizontal: true, value: 0.33 });
-makeFader ('threshH', { label: 'THRESH H', horizontal: true, value: 0.66 });
-
-// Demo: wiggle modulation arrows
+// Wiggle for visual verification
 let t = 0;
 setInterval (() => {
-    t += 0.05;
-    if (fH)
-    {
-        fH.setTargetModulation (Math.sin (t * 1.3) * 0.4);
-        fH.setSlopeModulation   (Math.sin (t * 0.7) * 0.3);
-        fH.setJitterModulation  (Math.cos (t * 0.9) * 0.25);
-        fH.setAppliedModulation (Math.sin (t * 1.3) * 0.3);
-    }
-    if (fV)
-    {
-        fV.setTargetModulation (Math.cos (t * 1.1) * 0.35);
-    }
+    t += 0.04;
+    f.setSlopeModulation  (Math.sin (t * 0.7) * 0.4);
+    f.setJitterModulation (Math.cos (t * 0.9) * 0.3);
 }, 50);
 </script>
 </body>
