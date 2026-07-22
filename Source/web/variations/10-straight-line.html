@@ -206,28 +206,28 @@ class RuneFader {
         ctx.beginPath(); ctx.moveTo(r.x,r.top); ctx.lineTo(r.x,r.bot); ctx.stroke();
     }
 
-    // ── Modulation feedback: arrow from handle in applied-mod direction ──
+    // ── Modulation feedback: thin bar from handle + white dot at end ──
     _drawModArrowH(ctx,hp,ry,spread,rLeft,rRight,lw){
         const railW=rRight-rLeft;
         const offset=this.appSmoothed*0.5*railW;
         if(Math.abs(offset)<0.5)return;
         const tipX=Math.max(rLeft,Math.min(rRight,hp+offset));
-        ctx.strokeStyle=rgba(CREAM,0.7);
-        ctx.lineWidth=lw;
-        ctx.beginPath();
-        ctx.moveTo(hp,ry-spread*0.7); ctx.lineTo(tipX,ry); ctx.lineTo(hp,ry+spread*0.7);
-        ctx.closePath(); ctx.stroke();
+        const dotR=(spread+4)/2;
+        ctx.strokeStyle=rgba(CREAM,0.4); ctx.lineWidth=lw*2;
+        ctx.beginPath(); ctx.moveTo(hp,ry); ctx.lineTo(tipX,ry); ctx.stroke();
+        ctx.fillStyle=rgba(CREAM,0.85);
+        ctx.beginPath(); ctx.ellipse(tipX,ry,dotR,dotR,0,0,Math.PI*2); ctx.fill();
     }
     _drawModArrowV(ctx,rx,hp,spread,rTop,rBot,lw){
         const railH=rBot-rTop;
         const offset=this.appSmoothed*0.5*railH;
         if(Math.abs(offset)<0.5)return;
         const tipY=Math.max(rTop,Math.min(rBot,hp-offset));
-        ctx.strokeStyle=rgba(CREAM,0.7);
-        ctx.lineWidth=lw;
-        ctx.beginPath();
-        ctx.moveTo(rx-spread*0.7,hp); ctx.lineTo(rx,tipY); ctx.lineTo(rx+spread*0.7,hp);
-        ctx.closePath(); ctx.stroke();
+        const dotR=(spread+4)/2;
+        ctx.strokeStyle=rgba(CREAM,0.4); ctx.lineWidth=lw*2;
+        ctx.beginPath(); ctx.moveTo(rx,hp); ctx.lineTo(rx,tipY); ctx.stroke();
+        ctx.fillStyle=rgba(CREAM,0.85);
+        ctx.beginPath(); ctx.ellipse(rx,tipY,dotR,dotR,0,0,Math.PI*2); ctx.fill();
     }
 
     // ── Outlined arrows from rect top corners ──
