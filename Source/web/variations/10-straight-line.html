@@ -66,6 +66,7 @@ class RuneFader {
         this._keydown=(e)=>{ if(e.shiftKey||e.altKey||e.metaKey){ this._mods.shift=e.shiftKey; this._mods.alt=e.altKey; this._mods.meta=e.metaKey; } };
         this._keyup=(e)=>{ if(['Shift','Alt','Meta'].includes(e.key)){ this._mods.shift=e.shiftKey; this._mods.alt=e.altKey; this._mods.meta=e.metaKey; } };
         document.addEventListener('keydown',this._keydown); document.addEventListener('keyup',this._keyup);
+        window.addEventListener('blur',this._blur=()=>{ this._mods={shift:false, alt:false, meta:false}; });
         this._move=this._move.bind(this); this._up=this._up.bind(this);
         canvas.addEventListener('dblclick',this._dblclick=(e)=>{
             if(e.shiftKey){ this.slpTarget=0; this._onSlope(0); }
@@ -283,6 +284,7 @@ class RuneFader {
         this.c.removeEventListener('dblclick',this._dblclick);
         this.c.removeEventListener('wheel',this._wheel);
         this.c.removeEventListener('contextmenu',()=>{});
+        window.removeEventListener('blur',this._blur);
         document.removeEventListener('keydown',this._keydown);
         document.removeEventListener('keyup',this._keyup);
         document.removeEventListener('mousemove',this._move);
