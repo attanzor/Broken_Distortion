@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minimal Wire — RuneFader</title>
+<style>
+  body {
+    margin: 0; padding: 40px;
+    background: #0a0a0a;
+    display: flex; gap: 32px; flex-wrap: wrap;
+    align-items: flex-start;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .group { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<div class="group">
+  <canvas id="h1" width="200" height="48"></canvas>
+  <canvas id="h2" width="200" height="48"></canvas>
+  <canvas id="h3" width="200" height="48"></canvas>
+</div>
+<div class="group">
+  <canvas id="v1" width="48" height="200"></canvas>
+  <canvas id="v2" width="48" height="200"></canvas>
+  <canvas id="v3" width="48" height="200"></canvas>
+</div>
+
+<script>
+// ── Minimal Wire RuneFader ────────────────────────────────────────────────
+
+const EMBER  = '#EF8B48';
+const VOID   = '#D5D0B8';
+
+function rgba (hex, a) {
+    const r = parseInt (hex.slice (1, 3), 16);
+    const g = parseInt (hex.slice (3, 5), 16);
+    const b = parseInt (hex.slice (5, 7), 16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+function mulSat (hex, s) {
+    const r = parseInt (hex.slice (1, 3), 16), g = parseInt (hex.slice (3, 5), 16), b = parseInt (hex.slice (5, 7), 16);
+    const max = Math.max (r, g, b) / 255;
+    if (max === 0) return hex;
+    const rr = Math.round (r * (1 - s + s / max)), gg = Math.round (g * (1 - s + s / max)), bb = Math.round (b * (1 - s + s / max));
+    return '#' + [rr, gg, bb].map (v => v.toString (16).padStart (2, '0')).join ('');
+}
+
+class RuneFader {
+    constructor (canvas, opts = {}) {
+        this.c = canvas;
+        this.ctx = canvas.getContext ('2d');
+        this.h = opts.horizontal !== false;
+        this.label = opts.label || '';
+        this.value = opts.value !== undefined ? opts.value : 0.5;
+        this.explEnabled = true;
+
+        this._onValue      = opts.onValue      || (() => {});
+        this._onModulation = opts.onModulation || (() => {});
+        this._onSlope      = opts.onSlope      || (() => {});
+        this._onJitter     = opts.onJitter     || (() => {});
+        this._onCtrlClick  = opts.onCtrlClick  || (() => {});
+        this._onInteraction= opts.onInteraction|| (() => {});
+
+        this.modTarget  = 0;   this.modSmoothed  = 0;
+        this.slpTarget  = 0;   this.slpSmoothed  = 0;
+        this.jitTarget  = 0;   this.jitSmoothed  = 0;
+        this.appTarget  = 0;   this.appSmoothed  = 0;
+
+        this._drag = 'none';
+        this._dragStart = 0;
+        this._dragOrigin = 0;
+
+        canvas.addEventListener ('mousedown',  this._down = this._down.bind (this));
+        this._move = this._move.bind (this);
+        this._up   = this._up.bind (this);
+        canvas.addEventListener ('contextmenu', e => e.preventDefault());
+        canvas.addEventListener ('wheel', this._wheel = this._wheel.bind (this), { passive: false });
+        canvas.style.cursor = this.h ? 'ew-resize' : 'ns-resize';
+
+        this._tick();
+    }
+
+    setTargetModulation (v)  { this.modTarget = Math.max (-1, Math.min (1, v)); }
+    setAppliedModulation (v) { this.appTarget = Math.max (-1, Math.min (1, v)); }
+    setSlopeModulation (v)   { this.slpTarget = Math.max (-1, Math.min (1, v)); }
+    setJitterModulation (v)  { this.jitTarget = Math.max (-1, Math.min (1, v)); }
+    setExplEnabled (e)       { this.explEnabled = e; }
+
+    _rail () {
+        const w = this.c.width, hh = this.c.height;
+        if (this.h) {
+            const y = hh / 2;
+            return { left: 18, right: w - 18, y };
+        }
+        return { top: 18, bot: hh - 18, x: w / 2 };
+    }
+
+    _handlePos () {
+        const r = this._rail();
+        if (this.h) return r.left + this.value * (r.right - r.left);
+        return r.bot - this.value * (r.bot - r.top);
+    }
+
+    _valFromClient (cx, cy) {
+        const rect = this.c.getBoundingClientRect();
+        const mx = cx - rect.left;
+        const my = cy - rect.top;
+        const r = this._rail();
+        const v = this.h
+            ? (mx - r.left) / (r.right - r.left)
+            : 1 - (my - r.top) / (r.bot - r.top);
+        return Math.max (0, Math.min (1, v));
+    }
+
+    _down (e) {
+        this._onInteraction();
+        if (e.ctrlKey) { this._onCtrlClick(); return; }
+
+        if (e.shiftKey)               { this._drag = 'slope';  this._dragOrigin = this.slpTarget; }
+        else if (e.altKey)            { this._drag = 'jitter'; this._dragOrigin = this.jitTarget; }
+        else if (e.metaKey)           { this._drag = 'mod';    this._dragOrigin = this.modTarget; }
+        else {
+            const v = this._valFromClient (e.clientX, e.clientY);
+            this.value = v;
+            this._onValue (v);
+            this._drag = 'value';
+        }
+        this._dragStart = this.h ? e.clientX : e.clientY;
+        document.addEventListener ('mousemove', this._move);
+        document.addEventListener ('mouseup',   this._up);
+        this._applyDrag (e);
+        e.preventDefault();
+    }
+
+    _applyDrag (e) {
+        const rangeRaw = this.h ? (this.c.width - 36) : (this.c.height - 36);
+        const range = rangeRaw / 2;
+        const delta = this.h
+            ? (e.clientX - this._dragStart) / range
+            : -(e.clientY - this._dragStart) / range;
+
+        const mods = ['slope', 'jitter', 'mod'];
+        const idx = mods.indexOf (this._drag);
+        if (idx >= 0) {
+            const setter = [(v)=>{ this.slpTarget=v; this._onSlope(v); },
+                            (v)=>{ this.jitTarget=v; this._onJitter(v); },
+                            (v)=>{ this.modTarget=v; this._onModulation(v); }][idx];
+            const val = Math.max (-1, Math.min (1, this._dragOrigin + delta));
+            setter (val);
+        } else {
+            this.value = this._valFromClient (e.clientX, e.clientY);
+            this._onValue (this.value);
+        }
+    }
+
+    _move (e) {
+        if (this._drag === 'none') return;
+        this._applyDrag (e);
+    }
+
+    _up () {
+        this._drag = 'none';
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+
+    _wheel (e) {
+        if (e.shiftKey) {
+            e.preventDefault();
+            const step = e.deltaY < 0 ? 0.001 : -0.001;
+            this.value = Math.max (0, Math.min (1, this.value + step));
+            this._onValue (this.value);
+        }
+    }
+
+    _tick () {
+        const c = 0.18;
+        this.modSmoothed += (this.modTarget - this.modSmoothed) * c;
+        this.slpSmoothed += (this.slpTarget - this.slpSmoothed) * c;
+        this.jitSmoothed += (this.jitTarget - this.jitSmoothed) * c;
+        this.appSmoothed += (this.appTarget - this.appSmoothed) * c;
+        this._paint();
+        requestAnimationFrame (() => this._tick());
+    }
+
+    _paint () {
+        const ctx = this.ctx;
+        const w = this.c.width, hh = this.c.height;
+        ctx.clearRect (0, 0, w, hh);
+
+        const r = this._rail();
+        const hp  = this._handlePos();
+        const spread = this.h ? 5.333 : hh * 0.15;  // half usual spread
+
+        // label — 9px, lowercase, muted
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = rgba (VOID, 0.28);
+        ctx.font = '9px sans-serif';
+        ctx.fillText (this.label.toLowerCase(), w / 2, this.h ? 2 : hh - 14);
+
+        if (this.h) {
+            // rail — hairline, subtle, no end caps
+            ctx.strokeStyle = rgba (VOID, 0.25);
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo (r.left, r.y); ctx.lineTo (r.right, r.y);
+            ctx.stroke();
+
+            // handle — 2px ember circle only
+            ctx.fillStyle = this.explEnabled ? EMBER : mulSat (EMBER, 0.3);
+            ctx.beginPath();
+            ctx.ellipse (hp, r.y, 2, 2, 0, 0, Math.PI * 2); ctx.fill();
+
+            // modulation line — 0.5px, void
+            this._drawModLine (ctx, hp, r.y, 7, r.left, r.right, 0.5);
+
+            // arrows — 1px, half spread, very low alpha
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.modSmoothed, EMBER, 1);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.slpSmoothed, '#4CAF50', 1);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.jitSmoothed, '#AB47BC', 1);
+        } else {
+            // rail — hairline, subtle, no end caps
+            ctx.strokeStyle = rgba (VOID, 0.25);
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo (r.x, r.top); ctx.lineTo (r.x, r.bot);
+            ctx.stroke();
+
+            // handle — 2px ember circle only
+            ctx.fillStyle = this.explEnabled ? EMBER : mulSat (EMBER, 0.3);
+            ctx.beginPath();
+            ctx.ellipse (r.x, hp, 2, 2, 0, 0, Math.PI * 2); ctx.fill();
+
+            // modulation line — 0.5px, void
+            this._drawModLineV (ctx, r.x, hp, 7, r.top, r.bot, 0.5);
+
+            // arrows — 1px, half spread, very low alpha
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.modSmoothed, EMBER, 1);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.slpSmoothed, '#4CAF50', 1);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.jitSmoothed, '#AB47BC', 1);
+        }
+    }
+
+    _drawHArrow (ctx, rLeft, rRight, y, spread, value, colour, strokeW) {
+        if (Math.abs (value) <= 0.001) return;
+        const alpha = 0.12 + Math.abs (value) * 0.16;
+        ctx.strokeStyle = rgba (colour, alpha);
+        ctx.lineWidth = strokeW;
+        ctx.beginPath();
+        if (value > 0) {
+            const tipX = rLeft + value * (rRight - rLeft);
+            ctx.moveTo (rLeft, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rLeft, y + spread);
+        } else {
+            const tipX = rRight + value * (rRight - rLeft);
+            ctx.moveTo (rRight, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rRight, y + spread);
+        }
+        ctx.stroke();
+    }
+
+    _drawVArrow (ctx, x, rTop, rBot, spread, value, colour, strokeW) {
+        if (Math.abs (value) <= 0.001) return;
+        const alpha = 0.12 + Math.abs (value) * 0.16;
+        ctx.strokeStyle = rgba (colour, alpha);
+        ctx.lineWidth = strokeW;
+        ctx.beginPath();
+        if (value < 0) {
+            const tipY = rTop + Math.abs (value) * (rBot - rTop);
+            ctx.moveTo (x - spread, rTop);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rTop);
+        } else {
+            const tipY = rBot - value * (rBot - rTop);
+            ctx.moveTo (x - spread, rBot);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rBot);
+        }
+        ctx.stroke();
+    }
+
+    _drawModLine (ctx, hp, ry, rhh, rLeft, rRight, lw) {
+        const railW = rRight - rLeft;
+        const offset = this.appSmoothed * 0.5 * railW;
+        const mx = Math.max (rLeft, Math.min (rRight, hp + offset));
+        const h = rhh * 0.7;
+        ctx.strokeStyle = rgba (VOID, 0.22);
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.moveTo (mx, ry - h);
+        ctx.lineTo (mx, ry + h);
+        ctx.stroke();
+    }
+
+    _drawModLineV (ctx, rx, hp, rhh, rTop, rBot, lw) {
+        const railH = rBot - rTop;
+        const offset = this.appSmoothed * 0.5 * railH;
+        const my = Math.max (rTop, Math.min (rBot, hp - offset));
+        const h = rhh * 0.7;
+        ctx.strokeStyle = rgba (VOID, 0.22);
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.moveTo (rx - h, my);
+        ctx.lineTo (rx + h, my);
+        ctx.stroke();
+    }
+
+    destroy () {
+        this.c.removeEventListener ('mousedown',  this._down);
+        this.c.removeEventListener ('wheel',      this._wheel);
+        this.c.removeEventListener ('contextmenu', () => {});
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+}
+
+// ── Demo ──────────────────────────────────────────────────────────────────
+
+const h1 = new RuneFader (document.getElementById ('h1'), { label: 'drive', value: 0.5, onValue: v => h1.value = v });
+const h2 = new RuneFader (document.getElementById ('h2'), { label: 'mix', value: 0.3, onValue: v => h2.value = v });
+const h3 = new RuneFader (document.getElementById ('h3'), { label: 'output', value: 0.7, onValue: v => h3.value = v });
+const v1 = new RuneFader (document.getElementById ('v1'), { horizontal: false, label: 'res', value: 0.4, onValue: v => v1.value = v });
+const v2 = new RuneFader (document.getElementById ('v2'), { horizontal: false, label: 'cut', value: 0.6, onValue: v => v2.value = v });
+const v3 = new RuneFader (document.getElementById ('v3'), { horizontal: false, label: 'level', value: 0.8, onValue: v => v3.value = v });
+
+const all = [h1, h2, h3, v1, v2, v3];
+
+// simulate applied modulation
+let t = 0;
+function sim () {
+    t += 0.02;
+    for (const f of all) {
+        f.setAppliedModulation (Math.sin (t + all.indexOf (f) * 1.2) * 0.7);
+    }
+    requestAnimationFrame (sim);
+}
+sim();
+</script>
+</body>
+</html>

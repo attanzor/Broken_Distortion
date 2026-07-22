@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scorched Earth — RuneFader</title>
+<style>
+  body {
+    margin: 0; padding: 40px;
+    background: #15120e;
+    display: flex; gap: 32px; flex-wrap: wrap;
+    align-items: flex-start;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .test-section { margin-bottom: 40px; }
+  .test-hint { margin-top: 8px; color: #5a544a; font-size: 9px; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<div class="test-section">
+  <canvas id="test" width="300" height="42"></canvas>
+  <div class="test-hint">
+    Click/drag value &middot; Shift+drag slope &middot; Alt+drag jitter &middot; Cmd+drag mod &middot; Ctrl+click popup
+  </div>
+</div>
+
+<script>
+// ── Scorched Earth RuneFader ─────────────────────────────────────────────
+
+const BG     = '#15120E';
+const EMBER  = '#EF8B48';
+const GLOW   = '#FFA040';
+const WHITE  = '#FFE8C8';
+const VOID   = '#B7AA96';
+const GREEN  = '#4CAF50';
+const PURPLE = '#AB47BC';
+const ASH    = '#777';
+
+function rgba (hex, a) {
+    const r = parseInt (hex.slice (1, 3), 16);
+    const g = parseInt (hex.slice (3, 5), 16);
+    const b = parseInt (hex.slice (5, 7), 16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+// ── RuneFader ───────────────────────────────────────────────────────────
+
+class RuneFader {
+    constructor (canvas, opts = {}) {
+        this.c = canvas;
+        this.ctx = canvas.getContext ('2d');
+        this.h = opts.horizontal !== false;
+        this.label = opts.label || '';
+        this.value = opts.value !== undefined ? opts.value : 0.5;
+        this.explEnabled = true;
+
+        this._onValue      = opts.onValue      || (() => {});
+        this._onModulation = opts.onModulation || (() => {});
+        this._onSlope      = opts.onSlope      || (() => {});
+        this._onJitter     = opts.onJitter     || (() => {});
+        this._onCtrlClick  = opts.onCtrlClick  || (() => {});
+        this._onInteraction= opts.onInteraction|| (() => {});
+
+        this.modTarget  = 0;   this.modSmoothed  = 0;
+        this.slpTarget  = 0;   this.slpSmoothed  = 0;
+        this.jitTarget  = 0;   this.jitSmoothed  = 0;
+        this.appTarget  = 0;   this.appSmoothed  = 0;
+
+        this._drag = 'none';
+        this._dragStart = 0;
+        this._dragOrigin = 0;
+
+        canvas.addEventListener ('mousedown',  this._down = this._down.bind (this));
+        this._move = this._move.bind (this);
+        this._up   = this._up.bind (this);
+        canvas.addEventListener ('contextmenu', e => e.preventDefault());
+        canvas.addEventListener ('wheel', this._wheel = this._wheel.bind (this), { passive: false });
+        canvas.style.cursor = this.h ? 'ew-resize' : 'ns-resize';
+
+        this._tick();
+    }
+
+    setTargetModulation (v)  { this.modTarget = Math.max (-1, Math.min (1, v)); }
+    setAppliedModulation (v) { this.appTarget = Math.max (-1, Math.min (1, v)); }
+    setSlopeModulation (v)   { this.slpTarget = Math.max (-1, Math.min (1, v)); }
+    setJitterModulation (v)  { this.jitTarget = Math.max (-1, Math.min (1, v)); }
+    setExplEnabled (e)       { this.explEnabled = e; }
+
+    _rail () {
+        const w = this.c.width, hh = this.c.height;
+        if (this.h) {
+            const y = hh / 2;
+            return { left: 18, right: w - 18, y };
+        }
+        return { top: 18, bot: hh - 18, x: w / 2 };
+    }
+
+    _handlePos () {
+        const r = this._rail();
+        if (this.h) return r.left + this.value * (r.right - r.left);
+        return r.bot - this.value * (r.bot - r.top);
+    }
+
+    _valFromClient (cx, cy) {
+        const rect = this.c.getBoundingClientRect();
+        const mx = cx - rect.left;
+        const my = cy - rect.top;
+        const r = this._rail();
+        const v = this.h
+            ? (mx - r.left) / (r.right - r.left)
+            : 1 - (my - r.top) / (r.bot - r.top);
+        return Math.max (0, Math.min (1, v));
+    }
+
+    _down (e) {
+        this._onInteraction();
+        if (e.ctrlKey) { this._onCtrlClick(); return; }
+
+        if (e.shiftKey)               { this._drag = 'slope';  this._dragOrigin = this.slpTarget; }
+        else if (e.altKey)            { this._drag = 'jitter'; this._dragOrigin = this.jitTarget; }
+        else if (e.metaKey)           { this._drag = 'mod';    this._dragOrigin = this.modTarget; }
+        else {
+            const v = this._valFromClient (e.clientX, e.clientY);
+            this.value = v;
+            this._onValue (v);
+            this._drag = 'value';
+        }
+        this._dragStart = this.h ? e.clientX : e.clientY;
+        document.addEventListener ('mousemove', this._move);
+        document.addEventListener ('mouseup',   this._up);
+        this._applyDrag (e);
+        e.preventDefault();
+    }
+
+    _applyDrag (e) {
+        const rangeRaw = this.h ? (this.c.width - 36) : (this.c.height - 36);
+        const range = rangeRaw / 2;
+        const delta = this.h
+            ? (e.clientX - this._dragStart) / range
+            : -(e.clientY - this._dragStart) / range;
+
+        const mods = ['slope', 'jitter', 'mod'];
+        const idx = mods.indexOf (this._drag);
+        if (idx >= 0) {
+            const setter = [(v)=>{ this.slpTarget=v; this._onSlope(v); },
+                            (v)=>{ this.jitTarget=v; this._onJitter(v); },
+                            (v)=>{ this.modTarget=v; this._onModulation(v); }][idx];
+            const val = Math.max (-1, Math.min (1, this._dragOrigin + delta));
+            setter (val);
+        } else {
+            this.value = this._valFromClient (e.clientX, e.clientY);
+            this._onValue (this.value);
+        }
+    }
+
+    _move (e) {
+        if (this._drag === 'none') return;
+        this._applyDrag (e);
+    }
+
+    _up () {
+        this._drag = 'none';
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+
+    _wheel (e) {
+        if (e.shiftKey) {
+            e.preventDefault();
+            const step = e.deltaY < 0 ? 0.001 : -0.001;
+            this.value = Math.max (0, Math.min (1, this.value + step));
+            this._onValue (this.value);
+        }
+    }
+
+    _tick () {
+        const c = 0.18;
+        this.modSmoothed += (this.modTarget - this.modSmoothed) * c;
+        this.slpSmoothed += (this.slpTarget - this.slpSmoothed) * c;
+        this.jitSmoothed += (this.jitTarget - this.jitSmoothed) * c;
+        this.appSmoothed += (this.appTarget - this.appSmoothed) * c;
+        this._paint();
+        requestAnimationFrame (() => this._tick());
+    }
+
+    // ══════ SCORCHED EARTH _paint and draw helpers ═══════════════════════
+
+    _burnColor () {
+        return this.explEnabled ? EMBER : ASH;
+    }
+
+    _glowColor () {
+        return this.explEnabled ? GLOW : 'rgba(119,119,119,0.5)';
+    }
+
+    _coreColor () {
+        return this.explEnabled ? WHITE : '#999';
+    }
+
+    _paint () {
+        const ctx = this.ctx;
+        const w = this.c.width, hh = this.c.height;
+        ctx.clearRect (0, 0, w, hh);
+        ctx.fillStyle = BG;
+        ctx.fillRect (0, 0, w, hh);
+
+        const r = this._rail();
+        const hp = this._handlePos();
+        const spread = this.h ? 5.333 : hh * 0.45;
+
+        this._drawLabel (ctx, w, hh);
+
+        if (this.h) {
+            this._drawBurnRail (ctx, r.left, r.right, r.y);
+            this._drawFlameArrow (ctx, r.left, r.right, r.y, spread, this.modSmoothed);
+            this._drawFlameArrow (ctx, r.left, r.right, r.y, spread, this.slpSmoothed);
+            this._drawFlameArrow (ctx, r.left, r.right, r.y, spread, this.jitSmoothed);
+            this._drawModBurnLine (ctx, hp, r.y, r.left, r.right);
+            this._drawTeardropHandle (ctx, hp, r.y);
+            if (this.explEnabled) this._drawSpark (ctx, hp, r.y - 9, w, hh);
+        } else {
+            this._drawBurnRailV (ctx, r.x, r.top, r.bot);
+            this._drawFlameArrowV (ctx, r.x, r.top, r.bot, spread, this.modSmoothed);
+            this._drawFlameArrowV (ctx, r.x, r.top, r.bot, spread, this.slpSmoothed);
+            this._drawFlameArrowV (ctx, r.x, r.top, r.bot, spread, this.jitSmoothed);
+            this._drawModBurnLineV (ctx, r.x, hp, r.top, r.bot);
+            this._drawTeardropHandleV (ctx, r.x, hp);
+            if (this.explEnabled) this._drawSparkV (ctx, r.x, hp - 9, w, hh);
+        }
+    }
+
+    _drawLabel (ctx, w, hh) {
+        const alpha = this.explEnabled ? 0.45 : 0.18;
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = rgba (VOID, alpha);
+        ctx.fillText (this.label, w / 2, this.h ? 1 : hh - 16);
+    }
+
+    // ── Rail: glowing burn mark, fading to transparent at edges ─────────
+
+    _drawBurnRail (ctx, left, right, y) {
+        const grad = ctx.createLinearGradient (left, 0, right, 0);
+        const enabled = this.explEnabled;
+        grad.addColorStop (0,    'transparent');
+        grad.addColorStop (0.08, enabled ? rgba (EMBER, 0.08) : rgba (ASH, 0.06));
+        grad.addColorStop (0.3,  enabled ? rgba (GLOW, 0.35) : rgba (ASH, 0.18));
+        grad.addColorStop (0.5,  enabled ? rgba (EMBER, 0.65) : rgba (ASH, 0.28));
+        grad.addColorStop (0.7,  enabled ? rgba (GLOW, 0.35) : rgba (ASH, 0.18));
+        grad.addColorStop (0.92, enabled ? rgba (EMBER, 0.08) : rgba (ASH, 0.06));
+        grad.addColorStop (1,    'transparent');
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo (left, y);
+        ctx.lineTo (right, y);
+        ctx.stroke();
+
+        if (enabled) {
+            const glow = ctx.createLinearGradient (left, y - 1, left, y + 1);
+            glow.addColorStop (0, 'transparent');
+            glow.addColorStop (0.5, rgba (GLOW, 0.12));
+            glow.addColorStop (1, 'transparent');
+            ctx.strokeStyle = glow;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo (left, y);
+            ctx.lineTo (right, y);
+            ctx.stroke();
+        }
+    }
+
+    _drawBurnRailV (ctx, x, top, bot) {
+        const grad = ctx.createLinearGradient (0, top, 0, bot);
+        const enabled = this.explEnabled;
+        grad.addColorStop (0,    'transparent');
+        grad.addColorStop (0.08, enabled ? rgba (EMBER, 0.08) : rgba (ASH, 0.06));
+        grad.addColorStop (0.3,  enabled ? rgba (GLOW, 0.35) : rgba (ASH, 0.18));
+        grad.addColorStop (0.5,  enabled ? rgba (EMBER, 0.65) : rgba (ASH, 0.28));
+        grad.addColorStop (0.7,  enabled ? rgba (GLOW, 0.35) : rgba (ASH, 0.18));
+        grad.addColorStop (0.92, enabled ? rgba (EMBER, 0.08) : rgba (ASH, 0.06));
+        grad.addColorStop (1,    'transparent');
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo (x, top);
+        ctx.lineTo (x, bot);
+        ctx.stroke();
+
+        if (enabled) {
+            const glow = ctx.createLinearGradient (x - 1, top, x + 1, top);
+            glow.addColorStop (0, 'transparent');
+            glow.addColorStop (0.5, rgba (GLOW, 0.12));
+            glow.addColorStop (1, 'transparent');
+            ctx.strokeStyle = glow;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo (x, top);
+            ctx.lineTo (x, bot);
+            ctx.stroke();
+        }
+    }
+
+    // ── Arrows: flame-like triangles at rail endpoints ──────────────────
+
+    _drawFlameArrow (ctx, rLeft, rRight, y, spread, value) {
+        if (Math.abs (value) <= 0.001) return;
+        const tipX = value > 0
+            ? rLeft + value * (rRight - rLeft)
+            : rRight + value * (rRight - rLeft);
+
+        const side = value > 0 ? rLeft : rRight;
+        ctx.beginPath();
+        ctx.moveTo (side, y - spread);
+        ctx.lineTo (tipX, y);
+        ctx.lineTo (side, y + spread);
+        ctx.closePath();
+
+        if (this.explEnabled) {
+            const flicker = 0.08 + Math.abs (value) * 0.18;
+            const grad = ctx.createLinearGradient (side, y - spread, tipX, y);
+            grad.addColorStop (0, rgba (GLOW, flicker * 0.4));
+            grad.addColorStop (0.7, rgba (EMBER, flicker));
+            grad.addColorStop (1, rgba (GLOW, flicker * 0.3));
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = rgba (GLOW, flicker * 0.15);
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+        } else {
+            ctx.fillStyle = rgba (ASH, 0.06 + Math.abs (value) * 0.08);
+            ctx.fill();
+        }
+    }
+
+    _drawFlameArrowV (ctx, x, rTop, rBot, spread, value) {
+        if (Math.abs (value) <= 0.001) return;
+        const tipY = value < 0
+            ? rTop + Math.abs (value) * (rBot - rTop)
+            : rBot - value * (rBot - rTop);
+
+        const side = value < 0 ? rTop : rBot;
+        ctx.beginPath();
+        ctx.moveTo (x - spread, side);
+        ctx.lineTo (x, tipY);
+        ctx.lineTo (x + spread, side);
+        ctx.closePath();
+
+        if (this.explEnabled) {
+            const flicker = 0.08 + Math.abs (value) * 0.18;
+            const grad = ctx.createLinearGradient (x - spread, side, x, tipY);
+            grad.addColorStop (0, rgba (GLOW, flicker * 0.4));
+            grad.addColorStop (0.7, rgba (EMBER, flicker));
+            grad.addColorStop (1, rgba (GLOW, flicker * 0.3));
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = rgba (GLOW, flicker * 0.15);
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+        } else {
+            ctx.fillStyle = rgba (ASH, 0.06 + Math.abs (value) * 0.08);
+            ctx.fill();
+        }
+    }
+
+    // ── Modulation line: dimmer burn, offset from handle ────────────────
+
+    _drawModBurnLine (ctx, hp, ry, rLeft, rRight) {
+        const railW = rRight - rLeft;
+        const offset = this.appSmoothed * 0.5 * railW;
+        const mx = Math.max (rLeft, Math.min (rRight, hp + offset));
+        const h = 7;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        const enabled = this.explEnabled;
+        const grad = ctx.createLinearGradient (mx, ry - h, mx, ry + h);
+        grad.addColorStop (0, 'transparent');
+        grad.addColorStop (0.5, enabled ? rgba (EMBER, 0.28) : rgba (ASH, 0.14));
+        grad.addColorStop (1, 'transparent');
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo (mx, ry - h);
+        ctx.lineTo (mx, ry + h);
+        ctx.stroke();
+
+        if (enabled) {
+            ctx.strokeStyle = rgba (GLOW, 0.08);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo (mx, ry - h);
+            ctx.lineTo (mx, ry + h);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    _drawModBurnLineV (ctx, rx, hp, rTop, rBot) {
+        const railH = rBot - rTop;
+        const offset = this.appSmoothed * 0.5 * railH;
+        const my = Math.max (rTop, Math.min (rBot, hp - offset));
+        const h = 7;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        const enabled = this.explEnabled;
+        const grad = ctx.createLinearGradient (rx - h, my, rx + h, my);
+        grad.addColorStop (0, 'transparent');
+        grad.addColorStop (0.5, enabled ? rgba (EMBER, 0.28) : rgba (ASH, 0.14));
+        grad.addColorStop (1, 'transparent');
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo (rx - h, my);
+        ctx.lineTo (rx + h, my);
+        ctx.stroke();
+
+        if (enabled) {
+            ctx.strokeStyle = rgba (GLOW, 0.08);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo (rx - h, my);
+            ctx.lineTo (rx + h, my);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    // ── Handle: teardrop / inverted flame, bezier-drawn ─────────────────
+
+    _drawTeardropHandle (ctx, hpx, y) {
+        const rh = 9;
+        const bw = 3.5;
+
+        const color = this._burnColor();
+        const core  = this._coreColor();
+
+        const shape = () => {
+            ctx.beginPath();
+            ctx.moveTo (hpx - bw, y);
+            ctx.quadraticCurveTo (hpx - bw * 0.65, y - rh * 0.5, hpx, y - rh);
+            ctx.quadraticCurveTo (hpx + bw * 0.65, y - rh * 0.5, hpx + bw, y);
+            ctx.closePath();
+        };
+
+        shape();
+        ctx.fillStyle = this.explEnabled ? rgba (EMBER, 0.85) : rgba (ASH, 0.55);
+        ctx.fill();
+
+        if (this.explEnabled) {
+            const coreGrad = ctx.createRadialGradient (hpx, y - rh * 0.45, 0, hpx, y - rh * 0.45, bw * 1.4);
+            coreGrad.addColorStop (0, rgba (WHITE, 0.9));
+            coreGrad.addColorStop (0.35, rgba (GLOW, 0.7));
+            coreGrad.addColorStop (1, rgba (EMBER, 0));
+            shape();
+            ctx.fillStyle = coreGrad;
+            ctx.fill();
+        }
+    }
+
+    _drawTeardropHandleV (ctx, x, hpy) {
+        const rh = 9;
+        const bw = 3.5;
+
+        const shape = () => {
+            ctx.beginPath();
+            ctx.moveTo (x, hpy - bw);
+            ctx.quadraticCurveTo (x + rh * 0.5, hpy - bw * 0.65, x + rh, hpy);
+            ctx.quadraticCurveTo (x + rh * 0.5, hpy + bw * 0.65, x, hpy + bw);
+            ctx.closePath();
+        };
+
+        shape();
+        ctx.fillStyle = this.explEnabled ? rgba (EMBER, 0.85) : rgba (ASH, 0.55);
+        ctx.fill();
+
+        if (this.explEnabled) {
+            const coreGrad = ctx.createRadialGradient (x + rh * 0.45, hpy, 0, x + rh * 0.45, hpy, bw * 1.4);
+            coreGrad.addColorStop (0, rgba (WHITE, 0.9));
+            coreGrad.addColorStop (0.35, rgba (GLOW, 0.7));
+            coreGrad.addColorStop (1, rgba (EMBER, 0));
+            shape();
+            ctx.fillStyle = coreGrad;
+            ctx.fill();
+        }
+    }
+
+    // ── Spark: upward flicker from handle tip ───────────────────────────
+
+    _drawSpark (ctx, hpx, tipY, w, hh) {
+        const spark = Math.abs (this.modSmoothed * this.slpSmoothed) * 0.5 + 0.3;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        const off = (this.appSmoothed + this.slpSmoothed) * 0.3;
+        const len = 3 + spark * 3;
+
+        ctx.strokeStyle = rgba (WHITE, spark * 0.7);
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo (hpx, tipY);
+        ctx.lineTo (hpx + off * 1.5, tipY - len);
+        ctx.stroke();
+
+        ctx.strokeStyle = rgba (GLOW, spark * 0.5);
+        ctx.beginPath();
+        ctx.moveTo (hpx, tipY);
+        ctx.lineTo (hpx - 1.5 + off, tipY - len * 0.75);
+        ctx.stroke();
+
+        ctx.strokeStyle = rgba (EMBER, spark * 0.35);
+        ctx.beginPath();
+        ctx.moveTo (hpx, tipY);
+        ctx.lineTo (hpx + 2 + off * 0.5, tipY - len * 0.55);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    _drawSparkV (ctx, tipX, hpy, w, hh) {
+        const spark = Math.abs (this.modSmoothed * this.slpSmoothed) * 0.5 + 0.3;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        const off = (this.appSmoothed + this.slpSmoothed) * 0.3;
+        const len = 3 + spark * 3;
+
+        ctx.strokeStyle = rgba (WHITE, spark * 0.7);
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo (tipX, hpy);
+        ctx.lineTo (tipX + len, hpy + off * 1.5);
+        ctx.stroke();
+
+        ctx.strokeStyle = rgba (GLOW, spark * 0.5);
+        ctx.beginPath();
+        ctx.moveTo (tipX, hpy);
+        ctx.lineTo (tipX + len * 0.75, hpy - 1.5 + off);
+        ctx.stroke();
+
+        ctx.strokeStyle = rgba (EMBER, spark * 0.35);
+        ctx.beginPath();
+        ctx.moveTo (tipX, hpy);
+        ctx.lineTo (tipX + len * 0.55, hpy + 2 + off * 0.5);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    destroy () {
+        this.c.removeEventListener ('mousedown',  this._down);
+        this.c.removeEventListener ('wheel',      this._wheel);
+        this.c.removeEventListener ('contextmenu', () => {});
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+}
+
+// ── Test ──────────────────────────────────────────────────────────────────
+
+const f = new RuneFader (document.getElementById ('test'), {
+    label: 'THRESH L', horizontal: true, value: 0.5,
+    onValue (v)      { f.value = v; },
+    onModulation (v) {},
+    onSlope (v)      {},
+    onJitter (v)     {},
+    onCtrlClick ()   { console.log ('Popup: THRESH L'); },
+});
+
+let t = 0;
+function sim () {
+    t += 0.02;
+    f.setAppliedModulation (Math.sin (t * 1.3) * 0.5);
+    requestAnimationFrame (sim);
+}
+sim();
+</script>
+</body>
+</html>

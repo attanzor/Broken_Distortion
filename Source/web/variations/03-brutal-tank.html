@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brutal Tank — RuneFader</title>
+<style>
+  body {
+    margin: 0; padding: 40px;
+    background: #0a0a0a;
+    display: flex; gap: 32px; flex-wrap: wrap;
+    align-items: flex-start;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .group { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  canvas { display: block; }
+  .test-section { margin-bottom: 40px; }
+  .test-hint { margin-top: 6px; color: #555; font-size: 9px; }
+</style>
+</head>
+<body>
+
+<div class="test-section">
+  <canvas id="test" width="300" height="42"></canvas>
+  <div class="test-hint">
+    Click/drag value &middot; Shift+click/drag slope &middot; Alt+click/drag jitter &middot; Cmd+click/drag mod &middot; Ctrl+click popup
+  </div>
+</div>
+
+<div class="group">
+  <canvas id="h1" width="200" height="48"></canvas>
+  <canvas id="h2" width="200" height="48"></canvas>
+  <canvas id="h3" width="200" height="48"></canvas>
+</div>
+<div class="group">
+  <canvas id="v1" width="48" height="200"></canvas>
+  <canvas id="v2" width="48" height="200"></canvas>
+  <canvas id="v3" width="48" height="200"></canvas>
+</div>
+
+<script>
+// ── Brutal Tank RuneFader ────────────────────────────────────────────────
+// Same logic as reference. _paint and draw helpers replaced for brutalist aesthetic.
+
+const GROUND = '#1A1815';
+const VOID   = '#D5D0B8';
+const EMBER  = '#EF8B48';
+const GREEN  = '#4CAF50';
+const PURPLE = '#AB47BC';
+
+function rgba (hex, a) {
+    const r = parseInt (hex.slice (1, 3), 16);
+    const g = parseInt (hex.slice (3, 5), 16);
+    const b = parseInt (hex.slice (5, 7), 16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+function mulSat (hex, s) {
+    const r = parseInt (hex.slice (1, 3), 16), g = parseInt (hex.slice (3, 5), 16), b = parseInt (hex.slice (5, 7), 16);
+    const max = Math.max (r, g, b) / 255;
+    if (max === 0) return hex;
+    const rr = Math.round (r * (1 - s + s / max)), gg = Math.round (g * (1 - s + s / max)), bb = Math.round (b * (1 - s + s / max));
+    return '#' + [rr, gg, bb].map (v => v.toString (16).padStart (2, '0')).join ('');
+}
+
+class RuneFader {
+    constructor (canvas, opts = {}) {
+        this.c = canvas;
+        this.ctx = canvas.getContext ('2d');
+        this.h = opts.horizontal !== false;
+        this.label = opts.label || '';
+        this.value = opts.value !== undefined ? opts.value : 0.5;
+        this.explEnabled = true;
+
+        this._onValue      = opts.onValue      || (() => {});
+        this._onModulation = opts.onModulation || (() => {});
+        this._onSlope      = opts.onSlope      || (() => {});
+        this._onJitter     = opts.onJitter     || (() => {});
+        this._onCtrlClick  = opts.onCtrlClick  || (() => {});
+        this._onInteraction= opts.onInteraction|| (() => {});
+
+        this.modTarget  = 0;   this.modSmoothed  = 0;
+        this.slpTarget  = 0;   this.slpSmoothed  = 0;
+        this.jitTarget  = 0;   this.jitSmoothed  = 0;
+        this.appTarget  = 0;   this.appSmoothed  = 0;
+
+        this._drag = 'none';
+        this._dragStart = 0;
+        this._dragOrigin = 0;
+
+        canvas.addEventListener ('mousedown',  this._down = this._down.bind (this));
+        this._move = this._move.bind (this);
+        this._up   = this._up.bind (this);
+        canvas.addEventListener ('contextmenu', e => e.preventDefault());
+        canvas.addEventListener ('wheel', this._wheel = this._wheel.bind (this), { passive: false });
+        canvas.style.cursor = this.h ? 'ew-resize' : 'ns-resize';
+
+        this._tick();
+    }
+
+    setTargetModulation (v)  { this.modTarget = Math.max (-1, Math.min (1, v)); }
+    setAppliedModulation (v) { this.appTarget = Math.max (-1, Math.min (1, v)); }
+    setSlopeModulation (v)   { this.slpTarget = Math.max (-1, Math.min (1, v)); }
+    setJitterModulation (v)  { this.jitTarget = Math.max (-1, Math.min (1, v)); }
+    setExplEnabled (e)       { this.explEnabled = e; }
+
+    _rail () {
+        const w = this.c.width, hh = this.c.height;
+        if (this.h) {
+            const y = hh / 2 + 7;
+            return { left: 18, right: w - 18, y, hh: 17, railThick: 6 };
+        }
+        const x = w / 2;
+        return { top: 30, bot: hh - 16, x, hh: 19, railThick: 6 };
+    }
+
+    _handlePos () {
+        const r = this._rail();
+        if (this.h) return r.left + this.value * (r.right - r.left);
+        return r.bot - this.value * (r.bot - r.top);
+    }
+
+    _valFromClient (cx, cy) {
+        const rect = this.c.getBoundingClientRect();
+        const mx = cx - rect.left;
+        const my = cy - rect.top;
+        const r = this._rail();
+        const v = this.h
+            ? (mx - r.left) / (r.right - r.left)
+            : 1 - (my - r.top) / (r.bot - r.top);
+        return Math.max (0, Math.min (1, v));
+    }
+
+    _down (e) {
+        this._onInteraction();
+        if (e.ctrlKey) { this._onCtrlClick(); return; }
+
+        if (e.shiftKey)               { this._drag = 'slope';  this._dragOrigin = this.slpTarget; }
+        else if (e.altKey)            { this._drag = 'jitter'; this._dragOrigin = this.jitTarget; }
+        else if (e.metaKey)           { this._drag = 'mod';    this._dragOrigin = this.modTarget; }
+        else {
+            const v = this._valFromClient (e.clientX, e.clientY);
+            this.value = v;
+            this._onValue (v);
+            this._drag = 'value';
+        }
+        this._dragStart = this.h ? e.clientX : e.clientY;
+        document.addEventListener ('mousemove', this._move);
+        document.addEventListener ('mouseup',   this._up);
+        this._applyDrag (e);
+        e.preventDefault();
+    }
+
+    _applyDrag (e) {
+        const rangeRaw = this.h ? (this.c.width - 36) : (this.c.height - 46);
+        const range = rangeRaw / 2;
+        const delta = this.h
+            ? (e.clientX - this._dragStart) / range
+            : -(e.clientY - this._dragStart) / range;
+
+        const mods = ['slope', 'jitter', 'mod'];
+        const idx = mods.indexOf (this._drag);
+        if (idx >= 0) {
+            const setter = [(v)=>{ this.slpTarget=v; this._onSlope(v); },
+                            (v)=>{ this.jitTarget=v; this._onJitter(v); },
+                            (v)=>{ this.modTarget=v; this._onModulation(v); }][idx];
+            const val = Math.max (-1, Math.min (1, this._dragOrigin + delta));
+            setter (val);
+        } else {
+            this.value = this._valFromClient (e.clientX, e.clientY);
+            this._onValue (this.value);
+        }
+    }
+
+    _move (e) {
+        if (this._drag === 'none') return;
+        this._applyDrag (e);
+    }
+
+    _up () {
+        this._drag = 'none';
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+
+    _wheel (e) {
+        if (e.shiftKey) {
+            e.preventDefault();
+            const step = e.deltaY < 0 ? 0.001 : -0.001;
+            this.value = Math.max (0, Math.min (1, this.value + step));
+            this._onValue (this.value);
+        }
+    }
+
+    _tick () {
+        const c = 0.18;
+        this.modSmoothed += (this.modTarget - this.modSmoothed) * c;
+        this.slpSmoothed += (this.slpTarget - this.slpSmoothed) * c;
+        this.jitSmoothed += (this.jitTarget - this.jitSmoothed) * c;
+        this.appSmoothed += (this.appTarget - this.appSmoothed) * c;
+        this._paint();
+        requestAnimationFrame (() => this._tick());
+    }
+
+    // ── BRUTAL TANK _paint and draw helpers ─────────────────────────────
+
+    _paint () {
+        const ctx = this.ctx;
+        const w = this.c.width, hh = this.c.height;
+        ctx.clearRect (0, 0, w, hh);
+
+        ctx.fillStyle = GROUND;
+        ctx.fillRect (0, 0, w, hh);
+
+        const r = this._rail();
+        const hp  = this._handlePos();
+        const railThick = r.railThick;
+        const spread = this.h ? 16 : r.hh * 2 / 3 * 1.5;
+
+        // Label — bold 15px, uppercase, stretched letter-spacing, void
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.fillStyle = rgba (VOID, 0.76);
+        if (this.h)
+            ctx.fillText (this.label.toUpperCase(), w / 2, 0);
+        else
+            ctx.fillText (this.label.toUpperCase(), w / 2, hh - 16);
+
+        if (this.h) {
+            const ry = r.y;
+            const half = r.hh;
+
+            // Rail — massive 6px horizontal bar, void/bright, square-ended
+            ctx.fillStyle = rgba (VOID, 0.80);
+            ctx.fillRect (r.left, ry - railThick / 2, r.right - r.left, railThick);
+
+            // End caps — thick short vertical bars, 3px wide
+            const capW = 3;
+            const capAlpha = 0.80;
+            ctx.fillStyle = rgba (VOID, capAlpha);
+            for (const ex of [r.left, r.right]) {
+                ctx.fillRect (ex - capW / 2, ry - half, capW, half * 2);
+            }
+
+            // Arrows — THICK, 3px stroke, 150% spread, fill+stroke combo
+            this._drawBrutalHArrow (ctx, r.left, r.right, ry, spread, this.modSmoothed, EMBER);
+            this._drawBrutalHArrow (ctx, r.left, r.right, ry, spread, this.slpSmoothed, GREEN);
+            this._drawBrutalHArrow (ctx, r.left, r.right, ry, spread, this.jitSmoothed, PURPLE);
+
+            // Modulation line — thicker (3px), less transparent, white/void
+            this._drawBrutalModLine (ctx, hp, ry, half, r.left, r.right);
+
+            // Handle — thick vertical rectangle (8px wide, full handle height), ember with darker outline
+            const hw = 4; // half-width
+            ctx.fillStyle = EMBER;
+            ctx.fillRect (hp - hw, ry - half, hw * 2, half * 2);
+            ctx.strokeStyle = mulSat (EMBER, 0.70);
+            ctx.lineWidth = 1;
+            ctx.strokeRect (hp - hw, ry - half, hw * 2, half * 2);
+        } else {
+            const rx = r.x;
+            const half = r.hh;
+
+            // Rail — massive 6px vertical bar, void/bright, square-ended
+            ctx.fillStyle = rgba (VOID, 0.80);
+            ctx.fillRect (rx - railThick / 2, r.top, railThick, r.bot - r.top);
+
+            // End caps — thick short horizontal bars, 3px tall
+            const capH = 3;
+            ctx.fillStyle = rgba (VOID, 0.80);
+            for (const ey of [r.top, r.bot]) {
+                ctx.fillRect (rx - half, ey - capH / 2, half * 2, capH);
+            }
+
+            // Arrows — THICK, 3px stroke, 150% spread, fill+stroke combo
+            this._drawBrutalVArrow (ctx, rx, r.top, r.bot, spread, this.modSmoothed, EMBER);
+            this._drawBrutalVArrow (ctx, rx, r.top, r.bot, spread, this.slpSmoothed, GREEN);
+            this._drawBrutalVArrow (ctx, rx, r.top, r.bot, spread, this.jitSmoothed, PURPLE);
+
+            // Modulation line — thicker (3px), less transparent, white/void
+            this._drawBrutalModLineV (ctx, rx, hp, half, r.top, r.bot);
+
+            // Handle — thick horizontal rectangle, ember with darker outline
+            const hw = 4;
+            ctx.fillStyle = EMBER;
+            ctx.fillRect (rx - half, hp - hw, half * 2, hw * 2);
+            ctx.strokeStyle = mulSat (EMBER, 0.70);
+            ctx.lineWidth = 1;
+            ctx.strokeRect (rx - half, hp - hw, half * 2, hw * 2);
+        }
+    }
+
+    _drawBrutalHArrow (ctx, rLeft, rRight, y, spread, value, colour) {
+        if (Math.abs (value) <= 0.001) return;
+        const alpha = 0.25 + Math.abs (value) * 0.55;
+        ctx.beginPath();
+        if (value > 0) {
+            const tipX = rLeft + value * (rRight - rLeft);
+            ctx.moveTo (rLeft, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rLeft, y + spread);
+        } else {
+            const tipX = rRight + value * (rRight - rLeft);
+            ctx.moveTo (rRight, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rRight, y + spread);
+        }
+        ctx.closePath();
+        ctx.fillStyle = rgba (colour, alpha * 0.30);
+        ctx.fill();
+        ctx.strokeStyle = rgba (colour, alpha * 0.85);
+        ctx.lineWidth = 2.5;
+        ctx.lineJoin = 'miter';
+        ctx.stroke();
+    }
+
+    _drawBrutalVArrow (ctx, x, rTop, rBot, spread, value, colour) {
+        if (Math.abs (value) <= 0.001) return;
+        const alpha = 0.25 + Math.abs (value) * 0.55;
+        ctx.beginPath();
+        if (value < 0) {
+            const tipY = rTop + Math.abs (value) * (rBot - rTop);
+            ctx.moveTo (x - spread, rTop);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rTop);
+        } else {
+            const tipY = rBot - value * (rBot - rTop);
+            ctx.moveTo (x - spread, rBot);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rBot);
+        }
+        ctx.closePath();
+        ctx.fillStyle = rgba (colour, alpha * 0.30);
+        ctx.fill();
+        ctx.strokeStyle = rgba (colour, alpha * 0.85);
+        ctx.lineWidth = 2.5;
+        ctx.lineJoin = 'miter';
+        ctx.stroke();
+    }
+
+    _drawBrutalModLine (ctx, hp, ry, half, rLeft, rRight) {
+        const railW = rRight - rLeft;
+        const offset = this.appSmoothed * 0.5 * railW;
+        const mx = Math.max (rLeft, Math.min (rRight, hp + offset));
+        const h = half * 0.7;
+        ctx.strokeStyle = rgba (VOID, 0.50);
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'butt';
+        ctx.beginPath();
+        ctx.moveTo (mx, ry - h);
+        ctx.lineTo (mx, ry + h);
+        ctx.stroke();
+    }
+
+    _drawBrutalModLineV (ctx, rx, hp, half, rTop, rBot) {
+        const railH = rBot - rTop;
+        const offset = this.appSmoothed * 0.5 * railH;
+        const my = Math.max (rTop, Math.min (rBot, hp - offset));
+        const h = half * 0.7;
+        ctx.strokeStyle = rgba (VOID, 0.50);
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'butt';
+        ctx.beginPath();
+        ctx.moveTo (rx - h, my);
+        ctx.lineTo (rx + h, my);
+        ctx.stroke();
+    }
+
+    destroy () {
+        this.c.removeEventListener ('mousedown',  this._down);
+        this.c.removeEventListener ('wheel',      this._wheel);
+        this.c.removeEventListener ('contextmenu', () => {});
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+}
+
+// ── Demo ──────────────────────────────────────────────────────────────────
+
+const testFader = new RuneFader (document.getElementById ('test'), {
+    label: 'THRESH L',
+    value: 0.5,
+    onValue: v => testFader.value = v,
+    onCtrlClick: () => console.log ('test ctrl+click'),
+});
+
+const h1 = new RuneFader (document.getElementById ('h1'), { label: 'drive', value: 0.5, onValue: v => h1.value = v });
+const h2 = new RuneFader (document.getElementById ('h2'), { label: 'mix', value: 0.3, onValue: v => h2.value = v });
+const h3 = new RuneFader (document.getElementById ('h3'), { label: 'output', value: 0.7, onValue: v => h3.value = v });
+const v1 = new RuneFader (document.getElementById ('v1'), { horizontal: false, label: 'res', value: 0.4, onValue: v => v1.value = v });
+const v2 = new RuneFader (document.getElementById ('v2'), { horizontal: false, label: 'cut', value: 0.6, onValue: v => v2.value = v });
+const v3 = new RuneFader (document.getElementById ('v3'), { horizontal: false, label: 'level', value: 0.8, onValue: v => v3.value = v });
+
+const all = [testFader, h1, h2, h3, v1, v2, v3];
+
+let t = 0;
+function sim () {
+    t += 0.02;
+    for (const f of all)
+        f.setAppliedModulation (Math.sin (t + all.indexOf (f) * 1.2) * 0.7);
+    requestAnimationFrame (sim);
+}
+sim();
+</script>
+</body>
+</html>

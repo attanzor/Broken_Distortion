@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse / EKG — RuneFader</title>
+<style>
+  body {
+    margin: 0; padding: 40px;
+    background: #0a0f0a;
+    display: flex; gap: 32px; flex-wrap: wrap;
+    align-items: flex-start;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .test-section { margin-bottom: 40px; }
+  .test-hint { margin-top: 8px; color: rgba(213,208,184,0.30); font-size: 9px; font-family: monospace; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<div class="test-section">
+  <canvas id="test" width="300" height="42"></canvas>
+  <div class="test-hint">
+    Click/drag value &middot; Shift+drag slope &middot; Alt+drag jitter &middot; Cmd+drag mod &middot; Ctrl+click popup
+  </div>
+</div>
+
+<script>
+const BG     = '#0a0f0a';
+const VOID   = '#D5D0B8';
+const EMBER  = '#EF8B48';
+const GREEN  = '#4CAF50';
+const PURPLE = '#AB47BC';
+
+function rgba (hex, a) {
+    const r = parseInt (hex.slice (1, 3), 16);
+    const g = parseInt (hex.slice (3, 5), 16);
+    const b = parseInt (hex.slice (5, 7), 16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+class RuneFader {
+    constructor (canvas, opts = {}) {
+        this.c = canvas;
+        this.ctx = canvas.getContext ('2d');
+        this.h = opts.horizontal !== false;
+        this.label = opts.label || '';
+        this.value = opts.value !== undefined ? opts.value : 0.5;
+        this.explEnabled = true;
+
+        this._onValue      = opts.onValue      || (() => {});
+        this._onModulation = opts.onModulation || (() => {});
+        this._onSlope      = opts.onSlope      || (() => {});
+        this._onJitter     = opts.onJitter     || (() => {});
+        this._onCtrlClick  = opts.onCtrlClick  || (() => {});
+        this._onInteraction= opts.onInteraction|| (() => {});
+
+        this.modTarget  = 0;   this.modSmoothed  = 0;
+        this.slpTarget  = 0;   this.slpSmoothed  = 0;
+        this.jitTarget  = 0;   this.jitSmoothed  = 0;
+        this.appTarget  = 0;   this.appSmoothed  = 0;
+
+        this._drag = 'none';
+        this._dragStart = 0;
+        this._dragOrigin = 0;
+
+        canvas.addEventListener ('mousedown',  this._down = this._down.bind (this));
+        this._move = this._move.bind (this);
+        this._up   = this._up.bind (this);
+        canvas.addEventListener ('contextmenu', e => e.preventDefault());
+        canvas.addEventListener ('wheel', this._wheel = this._wheel.bind (this), { passive: false });
+        canvas.style.cursor = this.h ? 'ew-resize' : 'ns-resize';
+
+        this._tick();
+    }
+
+    setTargetModulation (v)  { this.modTarget = Math.max (-1, Math.min (1, v)); }
+    setAppliedModulation (v) { this.appTarget = Math.max (-1, Math.min (1, v)); }
+    setSlopeModulation (v)   { this.slpTarget = Math.max (-1, Math.min (1, v)); }
+    setJitterModulation (v)  { this.jitTarget = Math.max (-1, Math.min (1, v)); }
+    setExplEnabled (e)       { this.explEnabled = e; }
+
+    _rail () {
+        const w = this.c.width, hh = this.c.height;
+        if (this.h) {
+            const y = hh / 2 + 7;
+            return { left: 18, right: w - 18, y };
+        }
+        return { top: 30, bot: hh - 16, x: w / 2 };
+    }
+
+    _handlePos () {
+        const r = this._rail();
+        if (this.h) return r.left + this.value * (r.right - r.left);
+        return r.bot - this.value * (r.bot - r.top);
+    }
+
+    _valFromClient (cx, cy) {
+        const rect = this.c.getBoundingClientRect();
+        const mx = cx - rect.left;
+        const my = cy - rect.top;
+        const r = this._rail();
+        const v = this.h
+            ? (mx - r.left) / (r.right - r.left)
+            : 1 - (my - r.top) / (r.bot - r.top);
+        return Math.max (0, Math.min (1, v));
+    }
+
+    _down (e) {
+        this._onInteraction();
+        if (e.ctrlKey) { this._onCtrlClick(); return; }
+
+        if (e.shiftKey)               { this._drag = 'slope';  this._dragOrigin = this.slpTarget; }
+        else if (e.altKey)            { this._drag = 'jitter'; this._dragOrigin = this.jitTarget; }
+        else if (e.metaKey)           { this._drag = 'mod';    this._dragOrigin = this.modTarget; }
+        else {
+            const v = this._valFromClient (e.clientX, e.clientY);
+            this.value = v;
+            this._onValue (v);
+            this._drag = 'value';
+        }
+        this._dragStart = this.h ? e.clientX : e.clientY;
+        document.addEventListener ('mousemove', this._move);
+        document.addEventListener ('mouseup',   this._up);
+        this._applyDrag (e);
+        e.preventDefault();
+    }
+
+    _applyDrag (e) {
+        const rangeRaw = this.h ? (this.c.width - 36) : (this.c.height - 46);
+        const range = rangeRaw / 2;
+        const delta = this.h
+            ? (e.clientX - this._dragStart) / range
+            : -(e.clientY - this._dragStart) / range;
+
+        const mods = ['slope', 'jitter', 'mod'];
+        const idx = mods.indexOf (this._drag);
+        if (idx >= 0) {
+            const setter = [(v)=>{ this.slpTarget=v; this._onSlope(v); },
+                            (v)=>{ this.jitTarget=v; this._onJitter(v); },
+                            (v)=>{ this.modTarget=v; this._onModulation(v); }][idx];
+            const val = Math.max (-1, Math.min (1, this._dragOrigin + delta));
+            setter (val);
+        } else {
+            this.value = this._valFromClient (e.clientX, e.clientY);
+            this._onValue (this.value);
+        }
+    }
+
+    _move (e) {
+        if (this._drag === 'none') return;
+        this._applyDrag (e);
+    }
+
+    _up () {
+        this._drag = 'none';
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+
+    _wheel (e) {
+        if (e.shiftKey) {
+            e.preventDefault();
+            const step = e.deltaY < 0 ? 0.001 : -0.001;
+            this.value = Math.max (0, Math.min (1, this.value + step));
+            this._onValue (this.value);
+        }
+    }
+
+    _tick () {
+        const c = 0.18;
+        this.modSmoothed += (this.modTarget - this.modSmoothed) * c;
+        this.slpSmoothed += (this.slpTarget - this.slpSmoothed) * c;
+        this.jitSmoothed += (this.jitTarget - this.jitSmoothed) * c;
+        this.appSmoothed += (this.appTarget - this.appSmoothed) * c;
+        this._paint();
+        requestAnimationFrame (() => this._tick());
+    }
+
+    _isActive () {
+        return this._drag !== 'none'
+            || Math.abs (this.modSmoothed) > 0.002
+            || Math.abs (this.slpSmoothed) > 0.002
+            || Math.abs (this.jitSmoothed) > 0.002
+            || Math.abs (this.appSmoothed) > 0.002;
+    }
+
+    _paint () {
+        const ctx = this.ctx;
+        const w = this.c.width, hh = this.c.height;
+        ctx.clearRect (0, 0, w, hh);
+        ctx.fillStyle = BG;
+        ctx.fillRect (0, 0, w, hh);
+
+        const enabled = this.explEnabled;
+        const r = this._rail();
+        const hp  = this._handlePos();
+        const spread = this.h ? 10.667 : 7;
+
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        ctx.font = '11px monospace';
+        ctx.fillStyle = rgba (VOID, enabled ? 0.76 : 0.30);
+        ctx.fillText (this.label, w / 2, this.h ? 0 : hh - 16);
+
+        if (this.h) {
+            this._drawEkgRail (ctx, r.left, r.right, r.y);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.modSmoothed, EMBER, 1.8);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.slpSmoothed, GREEN, 1.8);
+            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.jitSmoothed, PURPLE, 1.8);
+            this._drawEkgModLine (ctx, hp, r.y, r.left, r.right);
+            this._drawEkgHandle (ctx, hp, r.y);
+        } else {
+            this._drawEkgRailV (ctx, r.x, r.top, r.bot);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.modSmoothed, EMBER, 1.8);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.slpSmoothed, GREEN, 1.8);
+            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.jitSmoothed, PURPLE, 1.8);
+            this._drawEkgModLineV (ctx, r.x, hp, r.top, r.bot);
+            this._drawEkgHandleV (ctx, r.x, hp);
+        }
+    }
+
+    _drawEkgRail (ctx, left, right, y) {
+        const alpha = this.explEnabled ? 0.80 : 0.30;
+        ctx.strokeStyle = rgba (VOID, alpha);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo (left, y);
+        ctx.lineTo (right, y);
+        ctx.stroke();
+
+        const railW = right - left;
+        const step = railW * 0.15;
+        const tickH = 3;
+        const baseAlpha = 0.15;
+        const active = this._isActive();
+
+        for (let x = left + step; x < right; x += step) {
+            const a = active ? baseAlpha + (Math.random() - 0.5) * 0.08 : baseAlpha;
+            ctx.strokeStyle = rgba (VOID, Math.max (0.04, Math.min (0.30, a)));
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo (x, y - tickH);
+            ctx.lineTo (x, y + tickH);
+            ctx.stroke();
+        }
+    }
+
+    _drawEkgRailV (ctx, x, top, bot) {
+        const alpha = this.explEnabled ? 0.80 : 0.30;
+        ctx.strokeStyle = rgba (VOID, alpha);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo (x, top);
+        ctx.lineTo (x, bot);
+        ctx.stroke();
+
+        const railH = bot - top;
+        const step = railH * 0.15;
+        const tickW = 3;
+        const baseAlpha = 0.15;
+        const active = this._isActive();
+
+        for (let y = top + step; y < bot; y += step) {
+            const a = active ? baseAlpha + (Math.random() - 0.5) * 0.08 : baseAlpha;
+            ctx.strokeStyle = rgba (VOID, Math.max (0.04, Math.min (0.30, a)));
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo (x - tickW, y);
+            ctx.lineTo (x + tickW, y);
+            ctx.stroke();
+        }
+    }
+
+    _drawEkgHandle (ctx, hp, ry) {
+        const hh = 7;
+        const cw = 3;
+        const enabled = this.explEnabled;
+
+        ctx.strokeStyle = enabled ? EMBER : rgba (VOID, 0.3);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo (hp, ry - hh);
+        ctx.lineTo (hp, ry + hh);
+        ctx.stroke();
+
+        ctx.strokeStyle = enabled ? EMBER : rgba (VOID, 0.3);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo (hp - cw, ry);
+        ctx.lineTo (hp + cw, ry);
+        ctx.stroke();
+
+        if (enabled) {
+            ctx.fillStyle = rgba (EMBER, 0.9);
+            ctx.beginPath();
+            ctx.ellipse (hp, ry, 1.5, 1.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    _drawEkgHandleV (ctx, rx, hp) {
+        const hh = 7;
+        const cw = 3;
+        const enabled = this.explEnabled;
+
+        ctx.strokeStyle = enabled ? EMBER : rgba (VOID, 0.3);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo (rx - hh, hp);
+        ctx.lineTo (rx + hh, hp);
+        ctx.stroke();
+
+        ctx.strokeStyle = enabled ? EMBER : rgba (VOID, 0.3);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo (rx, hp - cw);
+        ctx.lineTo (rx, hp + cw);
+        ctx.stroke();
+
+        if (enabled) {
+            ctx.fillStyle = rgba (EMBER, 0.9);
+            ctx.beginPath();
+            ctx.ellipse (rx, hp, 1.5, 1.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    _drawEkgModLine (ctx, hp, ry, rLeft, rRight) {
+        const railW = rRight - rLeft;
+        const offset = this.appSmoothed * 0.5 * railW;
+        const mx = Math.max (rLeft, Math.min (rRight, hp + offset));
+        const hh = 5;
+        const cw = 1.5;
+
+        ctx.strokeStyle = rgba (VOID, 0.35);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo (mx, ry - hh);
+        ctx.lineTo (mx, ry + hh);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo (mx - cw, ry);
+        ctx.lineTo (mx + cw, ry);
+        ctx.stroke();
+    }
+
+    _drawEkgModLineV (ctx, rx, hp, rTop, rBot) {
+        const railH = rBot - rTop;
+        const offset = this.appSmoothed * 0.5 * railH;
+        const my = Math.max (rTop, Math.min (rBot, hp - offset));
+        const hh = 5;
+        const cw = 1.5;
+
+        ctx.strokeStyle = rgba (VOID, 0.35);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo (rx - hh, my);
+        ctx.lineTo (rx + hh, my);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo (rx, my - cw);
+        ctx.lineTo (rx, my + cw);
+        ctx.stroke();
+    }
+
+    _drawHArrow (ctx, rLeft, rRight, y, spread, value, colour, strokeW) {
+        if (Math.abs (value) <= 0.001) return;
+        const alpha = 0.25 + Math.abs (value) * 0.40;
+        ctx.strokeStyle = rgba (colour, alpha);
+        ctx.lineWidth = strokeW;
+        ctx.lineJoin = 'miter';
+        ctx.beginPath();
+        if (value > 0) {
+            const tipX = rLeft + value * (rRight - rLeft);
+            ctx.moveTo (rLeft, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rLeft, y + spread);
+        } else {
+            const tipX = rRight + value * (rRight - rLeft);
+            ctx.moveTo (rRight, y - spread);
+            ctx.lineTo (tipX, y);
+            ctx.lineTo (rRight, y + spread);
+        }
+        ctx.closePath();
+        ctx.stroke();
+    }
+
+    _drawVArrow (ctx, x, rTop, rBot, spread, value, colour, strokeW) {
+        if (Math.abs (value) <= 0.001) return;
+        const alpha = 0.25 + Math.abs (value) * 0.40;
+        ctx.strokeStyle = rgba (colour, alpha);
+        ctx.lineWidth = strokeW;
+        ctx.lineJoin = 'miter';
+        ctx.beginPath();
+        if (value < 0) {
+            const tipY = rTop + Math.abs (value) * (rBot - rTop);
+            ctx.moveTo (x - spread, rTop);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rTop);
+        } else {
+            const tipY = rBot - value * (rBot - rTop);
+            ctx.moveTo (x - spread, rBot);
+            ctx.lineTo (x, tipY);
+            ctx.lineTo (x + spread, rBot);
+        }
+        ctx.closePath();
+        ctx.stroke();
+    }
+
+    destroy () {
+        this.c.removeEventListener ('mousedown',  this._down);
+        this.c.removeEventListener ('wheel',      this._wheel);
+        this.c.removeEventListener ('contextmenu', () => {});
+        document.removeEventListener ('mousemove', this._move);
+        document.removeEventListener ('mouseup',   this._up);
+    }
+}
+
+const f = new RuneFader (document.getElementById ('test'), {
+    label: 'THRESH L', horizontal: true, value: 0.5,
+    onValue (v)      { f.value = v; },
+    onModulation (v) {},
+    onSlope (v)      {},
+    onJitter (v)     {},
+    onCtrlClick ()   { console.log ('Popup: THRESH L'); },
+});
+
+let t = 0;
+function sim () {
+    t += 0.02;
+    f.setAppliedModulation (Math.sin (t * 1.3) * 0.5);
+    requestAnimationFrame (sim);
+}
+sim();
+</script>
+</body>
+</html>
