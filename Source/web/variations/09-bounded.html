@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>08 · Prismatic</title>
+<style>
+  body {
+    margin: 0; padding: 64px;
+    background: #0F0C18; color: #C4B5A5;
+    font-family: 'Helvetica Neue', sans-serif; font-size: 11px;
+    user-select: none;
+  }
+  h1 { color:#F0E6D3; font-size:14px; text-transform:uppercase; letter-spacing:1px; margin:0 0 32px; }
+  canvas { display:block; margin-bottom:12px; }
+  .info b { color:#E8956C; margin-right:16px; }
+  .info span { color:#F0E6D3; }
+  .instructions { margin-top:40px; color:rgba(196,181,165,0.4); font-size:10px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<h1>Prismatic — Diamond Handle / Tapered Rail / Filled Arrows / Glow</h1>
+
+<canvas id="f" width="500" height="64"></canvas>
+<div class="info">
+  <b>VALUE</b> <span id="v">0.50</span>
+  <b>MOD</b> <span id="m">0.00</span>
+  <b>SLOPE</b> <span id="s">0.00</span>
+  <b>JITTER</b> <span id="j">0.00</span>
+</div>
+
+<div class="instructions">
+  Drag = value &ensp; Shift+drag = slope (seafoam) &ensp; Alt+drag = jitter (violet) &ensp;
+  Cmd+drag = modulation (coral) &ensp; Ctrl+click = popup
+</div>
+
+<script>
+// ── Prismatic RuneFader ──
+
+const BG      = '#0F0C18';
+const CREAM   = '#F0E6D3';
+const ROSEGOLD='#E8956C';
+const CORAL   = '#FF6B6B';
+const SEAFOAM = '#4ECDC4';
+const VIOLET  = '#C77DFF';
+
+function rgba (hex, a) {
+    const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+class RuneFader {
+    constructor (canvas, opts={}) {
+        this.c=canvas; this.ctx=canvas.getContext('2d'); this.h=opts.horizontal!==false;
+        this.label=opts.label||''; this.value=opts.value!==undefined?opts.value:0.5; this.explEnabled=true;
+        this._onValue=opts.onValue||(()=>{}); this._onModulation=opts.onModulation||(()=>{});
+        this._onSlope=opts.onSlope||(()=>{}); this._onJitter=opts.onJitter||(()=>{});
+        this._onCtrlClick=opts.onCtrlClick||(()=>{}); this._onInteraction=opts.onInteraction||(()=>{});
+        this.modTarget=0; this.modSmoothed=0; this.slpTarget=0; this.slpSmoothed=0;
+        this.jitTarget=0; this.jitSmoothed=0; this.appTarget=0; this.appSmoothed=0;
+        this._drag='none'; this._dragStart=0; this._dragOrigin=0;
+        canvas.addEventListener('mousedown',this._down=this._down.bind(this));
+        this._move=this._move.bind(this); this._up=this._up.bind(this);
+        canvas.addEventListener('contextmenu',e=>e.preventDefault());
+        canvas.addEventListener('wheel',this._wheel=this._wheel.bind(this),{passive:false});
+        canvas.style.cursor=this.h?'ew-resize':'ns-resize';
+        this._tick();
+    }
+    setTargetModulation(v){ this.modTarget=Math.max(-1,Math.min(1,v)); }
+    setAppliedModulation(v){ this.appTarget=Math.max(-1,Math.min(1,v)); }
+    setSlopeModulation(v){ this.slpTarget=Math.max(-1,Math.min(1,v)); }
+    setJitterModulation(v){ this.jitTarget=Math.max(-1,Math.min(1,v)); }
+    setExplEnabled(e){ this.explEnabled=e; }
+    _rail(){
+        const w=this.c.width, hh=this.c.height;
+        if(this.h){ const h=hh/2+7; return {left:18,right:w-18,y:h,hh:16}; }
+        return {top:30,bot:hh-16,x:w/2,hh:19};
+    }
+    _handlePos(){
+        const r=this._rail();
+        return this.h? r.left+this.value*(r.right-r.left): r.bot-this.value*(r.bot-r.top);
+    }
+    _valFromClient(cx,cy){
+        const rect=this.c.getBoundingClientRect(), mx=cx-rect.left, my=cy-rect.top, r=this._rail();
+        const v=this.h?(mx-r.left)/(r.right-r.left):1-(my-r.top)/(r.bot-r.top);
+        return Math.max(0,Math.min(1,v));
+    }
+    _down(e){
+        this._onInteraction();
+        if(e.ctrlKey){ this._onCtrlClick(); return; }
+        if(e.shiftKey){ this._drag='slope'; this._dragOrigin=this.slpTarget; }
+        else if(e.altKey){ this._drag='jitter'; this._dragOrigin=this.jitTarget; }
+        else if(e.metaKey){ this._drag='mod'; this._dragOrigin=this.modTarget; }
+        else{ const v=this._valFromClient(e.clientX,e.clientY); this.value=v; this._onValue(v); this._drag='value'; }
+        this._dragStart=this.h?e.clientX:e.clientY;
+        document.addEventListener('mousemove',this._move);
+        document.addEventListener('mouseup',this._up);
+        this._applyDrag(e); e.preventDefault();
+    }
+    _applyDrag(e){
+        const rr=this.h?this.c.width-36:this.c.height-46, range=rr/2;
+        const delta=this.h?(e.clientX-this._dragStart)/range:-(e.clientY-this._dragStart)/range;
+        const mods=['slope','jitter','mod'], idx=mods.indexOf(this._drag);
+        if(idx>=0){
+            const setter=[(v)=>{this.slpTarget=v;this._onSlope(v)},(v)=>{this.jitTarget=v;this._onJitter(v)},(v)=>{this.modTarget=v;this._onModulation(v)}][idx];
+            setter(Math.max(-1,Math.min(1,this._dragOrigin+delta)));
+        }else{ this.value=this._valFromClient(e.clientX,e.clientY); this._onValue(this.value); }
+    }
+    _move(e){ if(this._drag!=='none') this._applyDrag(e); }
+    _up(){ this._drag='none'; document.removeEventListener('mousemove',this._move); document.removeEventListener('mouseup',this._up); }
+    _wheel(e){ if(e.shiftKey){ e.preventDefault(); this.value=Math.max(0,Math.min(1,this.value+(e.deltaY<0?0.001:-0.001))); this._onValue(this.value); } }
+    _tick(){
+        const c=0.18;
+        this.modSmoothed+=(this.modTarget-this.modSmoothed)*c;
+        this.slpSmoothed+=(this.slpTarget-this.slpSmoothed)*c;
+        this.jitSmoothed+=(this.jitTarget-this.jitSmoothed)*c;
+        this.appSmoothed+=(this.appTarget-this.appSmoothed)*c;
+        this._paint(); requestAnimationFrame(()=>this._tick());
+    }
+
+    // ── PAINT ──
+    _paint(){
+        const ctx=this.ctx, w=this.c.width, hh=this.c.height;
+        ctx.fillStyle=BG; ctx.fillRect(0,0,w,hh);
+
+        const r=this._rail(), hp=this._handlePos(), lw=this.h?2.4:1.6, rhh=r.hh;
+        const spread=this.h?10.667:rhh*2/3;
+
+        // Label — warm grey, small
+        ctx.fillStyle=rgba('#C4B5A5', 0.7);
+        ctx.font=(this.h?'12px':'10px')+' sans-serif';
+        ctx.textAlign='center'; ctx.textBaseline='top';
+        ctx.fillText(this.label.toUpperCase(), w/2, this.h?0:hh-14);
+
+        if(this.h){
+            // ── HORIZONTAL ──
+            const pad=4;
+            const rect={x:pad, y:pad, w:w-pad*2, h:hh-pad*2};
+            // Enclosing rectangle
+            ctx.strokeStyle=rgba(CREAM,0.12); ctx.lineWidth=0.5;
+            ctx.strokeRect(rect.x,rect.y,rect.w,rect.h);
+            // Rail
+            this._drawTaperedRail(ctx,r,this.h);
+            // Arrows — outlined, base at rect top corners
+            this._drawOutlineArrowsH(ctx,rect,r.y,spread);
+            // Modulation feedback — diamond behind handle
+            this._drawModDiamond(ctx,hp,r.y,rhh,lw,true);
+            // Handle — on top
+            this._drawDiamondHandle(ctx,hp,r.y,rhh,lw);
+        }else{
+            // ── VERTICAL ──
+            const pad=4;
+            const rect={x:pad, y:pad, w:w-pad*2, h:hh-pad*2};
+            ctx.strokeStyle=rgba(CREAM,0.12); ctx.lineWidth=0.5;
+            ctx.strokeRect(rect.x,rect.y,rect.w,rect.h);
+            this._drawTaperedRailV(ctx,r);
+            this._drawOutlineArrowsV(ctx,rect,r.x,spread);
+            this._drawModDiamond(ctx,r.x,hp,rhh,lw,false);
+            this._drawDiamondHandleV(ctx,r.x,hp,rhh,lw);
+        }
+    }
+
+    // ── Tapered rail: fades at edges via gradient ──
+    _drawTaperedRail(ctx,r,ish){
+        const alpha=this.explEnabled?0.9:0.3;
+        const engine=(ish?1:0.7);
+        const grad=ctx.createLinearGradient(r.left,0,r.right,0);
+        grad.addColorStop(0, rgba('#F0E6D3',0));
+        grad.addColorStop(0.12, rgba('#F0E6D3',alpha*engine*0.4));
+        grad.addColorStop(0.5, rgba('#F0E6D3',alpha*engine));
+        grad.addColorStop(0.88, rgba('#F0E6D3',alpha*engine*0.4));
+        grad.addColorStop(1, rgba('#F0E6D3',0));
+        ctx.strokeStyle=grad; ctx.lineWidth=ish?2.4:1.6;
+        ctx.beginPath(); ctx.moveTo(r.left,r.y); ctx.lineTo(r.right,r.y); ctx.stroke();
+    }
+    _drawTaperedRailV(ctx,r){
+        const alpha=this.explEnabled?0.9:0.3;
+        const grad=ctx.createLinearGradient(0,r.top,0,r.bot);
+        grad.addColorStop(0, rgba('#F0E6D3',0));
+        grad.addColorStop(0.15, rgba('#F0E6D3',alpha*0.4));
+        grad.addColorStop(0.5, rgba('#F0E6D3',alpha*0.7));
+        grad.addColorStop(0.85, rgba('#F0E6D3',alpha*0.4));
+        grad.addColorStop(1, rgba('#F0E6D3',0));
+        ctx.strokeStyle=grad; ctx.lineWidth=1.6;
+        ctx.beginPath(); ctx.moveTo(r.x,r.top); ctx.lineTo(r.x,r.bot); ctx.stroke();
+    }
+
+    // ── Diamond handle: two filled triangles mirroring ──
+    _drawDiamondHandle(ctx,hp,ry,rhh,lw){
+        const halfW=lw*2.4;
+        const h=rhh*0.9;
+        ctx.fillStyle=this.explEnabled?ROSEGOLD:'#555';
+        ctx.beginPath();
+        ctx.moveTo(hp, ry-h);
+        ctx.lineTo(hp+halfW, ry);
+        ctx.lineTo(hp, ry+h);
+        ctx.lineTo(hp-halfW, ry);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle=rgba('#FFF0E5',0.6);
+        ctx.beginPath(); ctx.ellipse(hp,ry,3,3,0,0,Math.PI*2); ctx.fill();
+    }
+    _drawDiamondHandleV(ctx,rx,hp,rhh,lw){
+        const halfH=lw*2.4;
+        const w=rhh*0.9;
+        ctx.fillStyle=this.explEnabled?ROSEGOLD:'#555';
+        ctx.beginPath();
+        ctx.moveTo(rx-w, hp);
+        ctx.lineTo(rx, hp-halfH);
+        ctx.lineTo(rx+w, hp);
+        ctx.lineTo(rx, hp+halfH);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle=rgba('#FFF0E5',0.6);
+        ctx.beginPath(); ctx.ellipse(rx,hp,3,3,0,0,Math.PI*2); ctx.fill();
+    }
+
+    // ── Outlined arrows from rect top corners ──
+    _drawOutlineArrowsH(ctx,rect,ry,spread){
+        const arrows=[
+            {v:this.modSmoothed, col:CORAL},
+            {v:this.slpSmoothed, col:SEAFOAM},
+            {v:this.jitSmoothed, col:VIOLET},
+        ].filter(a=>Math.abs(a.v)>0.001);
+        arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
+        for(const a of arrows){
+            const alpha=0.25+Math.abs(a.v)*0.40;
+            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=1.8; ctx.lineJoin='miter';
+            if(a.v>0){
+                const tipX=rect.x+a.v*rect.w;
+                ctx.beginPath();
+                ctx.moveTo(rect.x, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(rect.x, ry+spread);
+                ctx.closePath(); ctx.stroke();
+            }else{
+                const tipX=rect.x+rect.w+a.v*rect.w;
+                ctx.beginPath();
+                ctx.moveTo(rect.x+rect.w, ry-spread); ctx.lineTo(tipX, ry); ctx.lineTo(rect.x+rect.w, ry+spread);
+                ctx.closePath(); ctx.stroke();
+            }
+        }
+    }
+    _drawOutlineArrowsV(ctx,rect,rx,spread){
+        const arrows=[
+            {v:this.modSmoothed, col:CORAL},
+            {v:this.slpSmoothed, col:SEAFOAM},
+            {v:this.jitSmoothed, col:VIOLET},
+        ].filter(a=>Math.abs(a.v)>0.001);
+        arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
+        for(const a of arrows){
+            const alpha=0.25+Math.abs(a.v)*0.40;
+            ctx.strokeStyle=rgba(a.col,alpha); ctx.lineWidth=1.8; ctx.lineJoin='miter';
+            if(a.v<0){
+                const tipY=rect.y+Math.abs(a.v)*rect.h;
+                ctx.beginPath();
+                ctx.moveTo(rx-spread, rect.y); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, rect.y);
+                ctx.closePath(); ctx.stroke();
+            }else{
+                const tipY=rect.y+rect.h-a.v*rect.h;
+                ctx.beginPath();
+                ctx.moveTo(rx-spread, rect.y+rect.h); ctx.lineTo(rx, tipY); ctx.lineTo(rx+spread, rect.y+rect.h);
+                ctx.closePath(); ctx.stroke();
+            }
+        }
+    }
+
+    // ── Modulation feedback: white diamond behind handle ──
+    _drawModDiamond(ctx,hp,ry,rhh,lw,isH){
+        const r=this._rail();
+        const railLen=isH?r.right-r.left:r.bot-r.top;
+        const offset=this.appSmoothed*0.5*railLen;
+        const mx=isH?Math.max(r.left,Math.min(r.right,hp+offset)):r.x;
+        const my=isH?ry:Math.max(r.top,Math.min(r.bot,hp-offset));
+        const half=isH?lw*2.4:rhh*0.9;
+        const hh2=isH?rhh*0.9:lw*2.4;
+        ctx.fillStyle=rgba(CREAM,0.2);
+        ctx.beginPath();
+        if(isH){
+            ctx.moveTo(mx, my-hh2); ctx.lineTo(mx+half, my);
+            ctx.lineTo(mx, my+hh2); ctx.lineTo(mx-half, my);
+        }else{
+            ctx.moveTo(r.x-half, my); ctx.lineTo(r.x, my-hh2);
+            ctx.lineTo(r.x+half, my); ctx.lineTo(r.x, my+hh2);
+        }
+        ctx.closePath(); ctx.fill();
+    }
+    _drawModDiamondV(ctx,rx,hp,rhh,lw,isH){}
+
+    destroy(){
+        this.c.removeEventListener('mousedown',this._down);
+        this.c.removeEventListener('wheel',this._wheel);
+        this.c.removeEventListener('contextmenu',()=>{});
+        document.removeEventListener('mousemove',this._move);
+        document.removeEventListener('mouseup',this._up);
+    }
+}
+
+// ── Test ──
+const f=new RuneFader(document.getElementById('f'),{
+    label:'THRESH L', horizontal:true, value:0.5,
+    onValue(v){ document.getElementById('v').textContent=v.toFixed(3); },
+    onModulation(v){ document.getElementById('m').textContent=v.toFixed(3); },
+    onSlope(v){ document.getElementById('s').textContent=v.toFixed(3); },
+    onJitter(v){ document.getElementById('j').textContent=v.toFixed(3); },
+    onCtrlClick(){ console.log('Popup'); },
+});
+
+let t=0;
+setInterval(()=>{ t+=0.04; f.setAppliedModulation(Math.sin(t*1.3)*0.5); },50);
+</script>
+</body>
+</html>
