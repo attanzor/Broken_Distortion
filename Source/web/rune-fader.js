@@ -226,11 +226,12 @@ class RuneFader
             ctx.fillStyle = hndC;
             ctx.beginPath();
             ctx.ellipse (hp, r.y, lw, lw, 0, 0, Math.PI * 2); ctx.fill();
-            // Arrows — anchored at rail endpoints
+            // Lines — anchored at rail endpoints
             this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.modSmoothed, EMBER, 1.8);
-            this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.appSmoothed, VOID, 1.2);
             this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.slpSmoothed, GREEN, 1.8);
             this._drawHArrow (ctx, r.left, r.right, r.y, spread, this.jitSmoothed, PURPLE, 1.8);
+            // White modulation feedback line (follows handle, offset by applied mod)
+            this._drawModLine (ctx, hp, r.y, rhh, r.left, r.right, lw);
         }
         else
         {
@@ -254,11 +255,12 @@ class RuneFader
             ctx.fillStyle = vhndC;
             ctx.beginPath();
             ctx.ellipse (r.x, hp, lw, lw, 0, 0, Math.PI * 2); ctx.fill();
-            // Arrows — anchored at rail endpoints
+            // Lines — anchored at rail endpoints
             this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.modSmoothed, EMBER, 1.8);
-            this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.appSmoothed, VOID, 1.2);
             this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.slpSmoothed, GREEN, 1.8);
             this._drawVArrow (ctx, r.x, r.top, r.bot, spread, this.jitSmoothed, PURPLE, 1.8);
+            // White modulation feedback line (follows handle, offset by applied mod)
+            this._drawModLineV (ctx, r.x, hp, rhh, r.top, r.bot, lw);
         }
     }
 
@@ -312,6 +314,35 @@ class RuneFader
             ctx.lineTo (x + spread, rBot);
         }
         ctx.closePath();
+        ctx.stroke();
+    }
+
+    /** White modulation feedback line: follows the handle, offset by appliedModulation * 0.5 */
+    _drawModLine (ctx, hp, ry, rhh, rLeft, rRight, lw)
+    {
+        const railW = rRight - rLeft;
+        const offset = this.appSmoothed * 0.5 * railW;
+        const mx = Math.max (rLeft, Math.min (rRight, hp + offset));
+        const h = rhh * 0.7;
+        ctx.strokeStyle = rgba (VOID, 0.35);
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.moveTo (mx, ry - h);
+        ctx.lineTo (mx, ry + h);
+        ctx.stroke();
+    }
+
+    _drawModLineV (ctx, rx, hp, rhh, rTop, rBot, lw)
+    {
+        const railH = rBot - rTop;
+        const offset = this.appSmoothed * 0.5 * railH;
+        const my = Math.max (rTop, Math.min (rBot, hp - offset));
+        const h = rhh * 0.7;
+        ctx.strokeStyle = rgba (VOID, 0.35);
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.moveTo (rx - h, my);
+        ctx.lineTo (rx + h, my);
         ctx.stroke();
     }
 
