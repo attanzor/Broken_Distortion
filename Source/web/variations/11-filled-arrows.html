@@ -257,7 +257,7 @@ class RuneFader {
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         ctx.save(); ctx.globalCompositeOperation='lighter';
         for(const a of arrows){
-            const alpha=this._mods[a.mod]?1:0.75;
+            const alpha=this._mods[a.mod]?1:0.5;
             ctx.fillStyle=rgba(a.col,alpha);
             if(a.v>0){
                 const tipX=rect.x+a.v*rect.w;
@@ -282,7 +282,7 @@ class RuneFader {
         arrows.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
         ctx.save(); ctx.globalCompositeOperation='lighter';
         for(const a of arrows){
-            const alpha=this._mods[a.mod]?1:0.75;
+            const alpha=this._mods[a.mod]?1:0.5;
             ctx.fillStyle=rgba(a.col,alpha);
             if(a.v<0){
                 const tipY=rect.y+Math.abs(a.v)*rect.h;
