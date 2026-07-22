@@ -136,13 +136,13 @@ class RuneFader {
         if(this.h){
             // ── HORIZONTAL ──
             const pad=4;
-            const rect={x:pad, y:pad, w:w-pad*2, h:hh-pad*2};
+            const rect={x:r.left-pad, y:r.y-spread-pad, w:r.right-r.left+pad*2, h:spread*2+pad*2};
             // Enclosing rectangle
             ctx.strokeStyle=rgba(CREAM,0.12); ctx.lineWidth=0.5;
             ctx.strokeRect(rect.x,rect.y,rect.w,rect.h);
             // Rail
             this._drawTaperedRail(ctx,r,this.h);
-            // Arrows — outlined, base at rect top corners
+            // Arrows — outlined, base at rect corners
             this._drawOutlineArrowsH(ctx,rect,r.y,spread);
             // Modulation feedback — diamond behind handle
             this._drawModDiamond(ctx,hp,r.y,rhh,lw,true);
@@ -151,7 +151,7 @@ class RuneFader {
         }else{
             // ── VERTICAL ──
             const pad=4;
-            const rect={x:pad, y:pad, w:w-pad*2, h:hh-pad*2};
+            const rect={x:r.x-spread-pad, y:r.top-pad, w:spread*2+pad*2, h:r.bot-r.top+pad*2};
             ctx.strokeStyle=rgba(CREAM,0.12); ctx.lineWidth=0.5;
             ctx.strokeRect(rect.x,rect.y,rect.w,rect.h);
             this._drawTaperedRailV(ctx,r);
